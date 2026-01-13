@@ -4,6 +4,7 @@
 tmp/
 # The Reference. PJS for ICP Spring 2025
 PythonJudgeSystem/
+downloaded_instructions/
 
 # https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files

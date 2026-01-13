@@ -1,0 +1,5 @@
+refresh_interval: 5
+lectures:
+  - 80794
+blacklist:
+  - 1800000 

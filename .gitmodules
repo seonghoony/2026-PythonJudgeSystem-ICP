@@ -1,0 +1,3 @@
+[submodule "assignments"]
+	path = assignments
+	url = https://github.com/seonghoony/seonghoony-2026-PythonJudgeSystem-ICP-Assignments.git

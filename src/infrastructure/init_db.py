@@ -14,7 +14,7 @@ load_dotenv()
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_USER = os.environ.get("DB_USER", "root")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
-DB_NAME = "PythonJudgeSystem" # New DB Name
+DB_NAME = os.environ.get("DB_NAME", "PythonJudgeSystem")
 
 DDL_STATEMENTS = [
     # 1. Lectures Table
@@ -79,7 +79,6 @@ DDL_STATEMENTS = [
         
         max_score FLOAT DEFAULT 100.0,
         score FLOAT DEFAULT NULL,
-        verdict VARCHAR(50) DEFAULT NULL,
         verdict VARCHAR(50) DEFAULT NULL,
         comment TEXT DEFAULT NULL,
         failure_details TEXT DEFAULT NULL,

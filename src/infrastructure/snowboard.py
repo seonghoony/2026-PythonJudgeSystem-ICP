@@ -352,6 +352,7 @@ class SnowBoard:
                             continue
 
         df['max_score'] = max_score
+        df = df.sort_values('최근 제출일', ascending=True).reset_index(drop=True)
         return df
 
     def fetch_submission(self, url: str) -> bytes:
@@ -542,3 +543,12 @@ class SnowBoard:
         # UPDATE: User requires "All successful". Combined with Unified Session, "No Error" safely implies "No Change".
         logger.info("  Success message not found, but no errors detected. Assuming 'No Change' success.")
         return True
+
+    def lock_submission(self, lock_url: str):
+        """
+        Locks a student's submission to prevent further submissions.
+        Called after a student achieves max score (제출변경방지).
+        """
+        if not lock_url:
+            return
+        self.s.get(lock_url)

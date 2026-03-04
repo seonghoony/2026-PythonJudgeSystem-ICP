@@ -110,6 +110,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         db.ensure_assignment(int(aid), lecture_id, aname)
 
     fresh_urls = {} # Transient storage for grade_urls  
+    lock_urls = {}  # Transient storage for 제출변경방지href (submission lock)
     for aid, item in assignments.items():
         logger.info(f"Fetching submissions for {item.get('title')} ({aid}) [Filter: {filter_status}]...")
         
@@ -133,12 +134,15 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
             
             href = row.get('첨부파일href') # File download link
             grade_url = row.get('성적버튼href') # Grading page link
+            lock_url = row.get('제출변경방지href') # Submission lock link
             ts = row.get('최근 제출일', '') # Timestamp string
             max_score_val = float(row.get('max_score', 100.0))
             
-            # Store transient URL for immediate grading
+            # Store transient URLs for immediate grading
             if grade_url:
                 fresh_urls[sid] = grade_url
+            if lock_url:
+                lock_urls[sid] = lock_url
 
             # Deduplication Logic
             # 1. If filter_status == 'requiregrading', ALWAYS fetch (Trust Snowboard)
@@ -163,6 +167,33 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                 continue
 
             try:
+                # Check for missing attachment
+                if not href:
+                    logger.info(f"  {sname} ({sid}): No attachment — recording as score 0.")
+                    fetched_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                    # Record empty submission
+                    empty_md5 = db.record_file(b"")
+                    db.record_submission(
+                        assignment_id=int(aid),
+                        student_id=sid,
+                        file_md5=empty_md5,
+                        submitted_at=ts,
+                        fetched_at=fetched_at,
+                        score=0.0,
+                        verdict="WA",
+                        comment="오답입니다. 제출물에 파일이 첨부되지 않았습니다.",
+                        is_force=force,
+                        max_score=max_score_val
+                    )
+                    # Upload score 0 to Snowboard
+                    if grade_url:
+                        try:
+                            sb.submit_score(grade_url, 0.0, "오답입니다. 제출물에 파일이 첨부되지 않았습니다.")
+                        except Exception as e:
+                            logger.error(f"  Upload Error: {e}")
+                    count += 1
+                    continue
+
                 # Just fetch.
                 content = sb.fetch_submission(href)
                 md5 = db.record_file(content)
@@ -187,9 +218,9 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         
         if count > 0:
             logger.info(f"Fetched {count} new submissions.")
-    return fresh_urls
+    return fresh_urls, lock_urls
 
-def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, url_map: Dict[str, str] = None, sb: Optional[SnowBoard] = None):
+def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, url_map: Dict[str, str] = None, lock_map: Dict[str, str] = None, sb: Optional[SnowBoard] = None):
     """Grade ungraded submissions from DB. If force=True, grade ALL."""
     
     # Instantiate Snowboard only if we might upload (and wasn't passed)
@@ -370,6 +401,15 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                             ok = sb.submit_score(grade_url, upload_score, comment)
                             if ok:
                                 logger.info("  Upload Success.")
+                                # Lock submission if student achieved max score (skip for professor)
+                                if upload_score >= max_score and student_id != os.environ.get("SNOWBOARD_USER", ""):
+                                    lock_url = (lock_map or {}).get(student_id)
+                                    if lock_url:
+                                        try:
+                                            sb.lock_submission(lock_url)
+                                            logger.info(f"  Submission locked (max score achieved).")
+                                        except Exception as e:
+                                            logger.error(f"  Lock Error: {e}")
                             else:
                                 logger.error("  Upload Failed (Snowboard returned false).")
                         except Exception as e:
@@ -393,10 +433,10 @@ def run_loop_body(lecture_id: int, assignment_id: int, dry_run: bool, force: boo
         
         logger.info(f"Processing Assignment {assignment_id} (Lecture {lecture_id}) [Force={force}]")
             
-        fresh_urls = run_fetch(lecture_id, assignment_id, filter_status=filter_target, force=force, sb=sb)
+        fresh_urls, lock_urls = run_fetch(lecture_id, assignment_id, filter_status=filter_target, force=force, sb=sb)
         
         # 2. Grade & Upload
-        run_grade(str(assignment_id), dry_run=dry_run, force=force, url_map=fresh_urls, sb=sb)
+        run_grade(str(assignment_id), dry_run=dry_run, force=force, url_map=fresh_urls, lock_map=lock_urls, sb=sb)
     except Exception as e:
         logger.error(f"Error processing assignment {assignment_id}: {e}")
 

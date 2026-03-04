@@ -63,6 +63,19 @@ def ensure_lecture(lecture_id: int, name: str):
     """
     execute_query(sql, (lecture_id, name), commit=True)
 
+def update_lecture_fetch_time(lecture_id: int):
+    """Update last_fetched_at to NOW() for the given lecture."""
+    sql = "UPDATE lectures SET last_fetched_at = NOW() WHERE id = %s"
+    execute_query(sql, (lecture_id,), commit=True)
+
+def get_lecture_fetch_time(lecture_id: int):
+    """Get last_fetched_at for the given lecture. Returns datetime or None."""
+    sql = "SELECT last_fetched_at FROM lectures WHERE id = %s"
+    rows = execute_query(sql, (lecture_id,))
+    if rows and rows[0]['last_fetched_at']:
+        return rows[0]['last_fetched_at']
+    return None
+
 def ensure_student(student_id: str, name: str, lecture_id: int):
     """Upsert student and enrollment."""
     # 1. Ensure Student
@@ -85,6 +98,19 @@ def ensure_assignment(assignment_id: int, lecture_id: int, name: str):
     ON DUPLICATE KEY UPDATE name = VALUES(name), lecture_id = VALUES(lecture_id)
     """
     execute_query(sql, (assignment_id, lecture_id, name), commit=True)
+
+def update_assignment_fetch_time(assignment_id: int):
+    """Update last_fetched_at to NOW() for the given assignment."""
+    sql = "UPDATE assignments SET last_fetched_at = NOW() WHERE id = %s"
+    execute_query(sql, (assignment_id,), commit=True)
+
+def get_assignment_fetch_time(assignment_id: int):
+    """Get last_fetched_at for the given assignment. Returns datetime or None."""
+    sql = "SELECT last_fetched_at FROM assignments WHERE id = %s"
+    rows = execute_query(sql, (assignment_id,))
+    if rows and rows[0]['last_fetched_at']:
+        return rows[0]['last_fetched_at']
+    return None
 
 def record_file(file: Union[bytes, str, Path]) -> str:
     """Store file content and return MD5."""

@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import yaml
 import logging
@@ -96,6 +97,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
     db.ensure_lecture(lecture_id, f"Lecture {lecture_id}")
     
     assignments = {}
+    now = pd.Timestamp.now()
     for _, row in df_assign.iterrows():
         aid = row['id_assignment']
         aname = row['과제']
@@ -105,6 +107,15 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         # Filter by assignment if requested
         if assignment_id and str(assignment_id) != str(aid):
             continue
+        
+        # Skip outdated assignments (past due + 5 min grace period), unless force=True
+        if not force and '종료 일시' in row.index and row['종료 일시'] != '-':
+            try:
+                due = pd.to_datetime(row['종료 일시'])
+                if due + pd.Timedelta(minutes=5) < now:
+                    continue
+            except Exception:
+                pass
         
         assignments[int(aid)] = {'title': aname}
         db.ensure_assignment(int(aid), lecture_id, aname)
@@ -120,6 +131,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         
         if df.empty:
             logger.info("  No submissions found.")
+            db.update_assignment_fetch_time(int(aid))
             continue
 
         total = len(df)
@@ -191,6 +203,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                             sb.submit_score(grade_url, 0.0, "오답입니다. 제출물에 파일이 첨부되지 않았습니다.")
                         except Exception as e:
                             logger.error(f"  Upload Error: {e}")
+                            push(f"Snowboard 업로드 오류: {e}")
                     count += 1
                     continue
 
@@ -218,6 +231,13 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         
         if count > 0:
             logger.info(f"Fetched {count} new submissions.")
+        
+        # Record fetch time for this assignment
+        db.update_assignment_fetch_time(int(aid))
+    
+    # Record fetch time for this lecture
+    db.update_lecture_fetch_time(lecture_id)
+    
     return fresh_urls, lock_urls
 
 def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, url_map: Dict[str, str] = None, lock_map: Dict[str, str] = None, sb: Optional[SnowBoard] = None):
@@ -293,6 +313,7 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                             sb.submit_score(grade_url, 0.0, comment)
                         except Exception as e:
                             logger.error(f"  Upload Error: {e}")
+                            push(f"Snowboard 업로드 오류: {e}")
                 continue
             
             with tempfile.NamedTemporaryFile(suffix=".py", delete=True) as tmp:
@@ -412,8 +433,10 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                                             logger.error(f"  Lock Error: {e}")
                             else:
                                 logger.error("  Upload Failed (Snowboard returned false).")
+                                push(f"Snowboard 업로드 실패: {student_id}")
                         except Exception as e:
                             logger.error(f"  Upload Error: {e}")
+                            push(f"Snowboard 업로드 오류: {student_id} - {e}")
                     elif not grade_url:
                         logger.warning("  No grade_url found for submission. Cannot upload.")
                     

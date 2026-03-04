@@ -21,7 +21,8 @@ DDL_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS lectures (
         id BIGINT PRIMARY KEY COMMENT 'Snowboard Lecture ID',
-        name VARCHAR(255) NOT NULL
+        name VARCHAR(255) NOT NULL,
+        last_fetched_at DATETIME DEFAULT NULL COMMENT 'Last time submissions were fetched'
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
     
@@ -51,7 +52,7 @@ DDL_STATEMENTS = [
         id BIGINT PRIMARY KEY COMMENT 'Snowboard Assignment ID',
         lecture_id BIGINT NOT NULL,
         name VARCHAR(255) NOT NULL,
-        due_date DATETIME DEFAULT NULL,
+        last_fetched_at DATETIME DEFAULT NULL COMMENT 'Last time submissions were fetched for this assignment',
         FOREIGN KEY (lecture_id) REFERENCES lectures(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,

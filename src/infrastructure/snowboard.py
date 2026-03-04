@@ -195,7 +195,7 @@ class SnowBoard:
     def list_submissions(
         self,
         id_assignment: Union[int, str],
-        rows_per_page: Union[int, str] = 10,
+        rows_per_page: Union[int, str] = -1,
         filter_status: str = '',
         ascending: bool = False
     ) -> pd.DataFrame:

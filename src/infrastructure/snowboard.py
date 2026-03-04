@@ -393,6 +393,86 @@ class SnowBoard:
         
         return save_path
 
+    def fetch_instruction(self, assignment_id: Union[int, str]) -> dict:
+        """
+        Fetches assignment instruction page from Snowboard.
+        Returns dict with 'title', 'html' (raw description HTML), and 'text' (cleaned text).
+        Also downloads embedded images to downloaded_instructions/images/.
+        """
+        url = f"{self.URL}/mod/assign/view.php?id={assignment_id}"
+        response = self.s.get(url)
+        bs = BeautifulSoup(response.text, 'html.parser')
+
+        # Extract title
+        title = ""
+        header = bs.find('h2')
+        if header:
+            title = header.get_text(strip=True)
+
+        # Extract assignment description
+        intro_div = bs.find('div', {'id': 'intro'})
+        if not intro_div:
+            # Fallback: look for the assignment body
+            intro_div = bs.find('div', class_='assignmentbody')
+        if not intro_div:
+            intro_div = bs.find('div', class_='no-overflow')
+
+        html_content = ""
+        if intro_div:
+            # Download embedded images
+            images_dir = Path("downloaded_instructions/images")
+            images_dir.mkdir(parents=True, exist_ok=True)
+
+            for img in intro_div.find_all('img'):
+                src = img.get('src', '')
+                if not src:
+                    continue
+                # Build absolute URL
+                abs_url = urljoin(url, src)
+                # Generate local filename
+                from urllib.parse import urlparse
+                parsed = urlparse(abs_url)
+                img_name = f"{assignment_id}_{Path(parsed.path).name}"
+                local_path = images_dir / img_name
+
+                if not local_path.exists():
+                    try:
+                        img_resp = self.s.get(abs_url, timeout=10)
+                        local_path.write_bytes(img_resp.content)
+                        logger.info(f"Downloaded image: {local_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to download image {abs_url}: {e}")
+
+                # Rewrite src to relative path
+                img['src'] = f"images/{img_name}"
+
+            html_content = str(intro_div)
+
+        return {
+            'title': title,
+            'html': html_content,
+            'assignment_id': str(assignment_id),
+        }
+
+    def save_instruction(self, assignment_id: Union[int, str],
+                         dest_dir: Path = Path("downloaded_instructions")) -> Path:
+        """
+        Fetches and saves assignment instruction as markdown file.
+        Returns the path to the saved file.
+        """
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        info = self.fetch_instruction(assignment_id)
+        title = info['title'] or f"Assignment {assignment_id}"
+        html = info['html']
+
+        content = f"# {title} (ID: {assignment_id})\n\n{html}\n"
+
+        save_path = dest_dir / f"{assignment_id}.md"
+        save_path.write_text(content, encoding='utf-8')
+        logger.info(f"Saved instruction to {save_path}")
+        return save_path
+
     def submit_score(self, grade_url: str, score: float, comment: str) -> bool:
         """
         Submits score using the 'grade_url' (extracted as '성적버튼href').

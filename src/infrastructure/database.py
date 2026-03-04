@@ -179,6 +179,12 @@ def record_code_similarity(
     """
     return execute_query(sql, (md5_a, md5_b, similarity, similarity_normalized), commit=True)
 
+def get_student_name(student_id: str) -> Optional[str]:
+    """Look up student name by ID."""
+    sql = "SELECT name FROM students WHERE student_id = %s"
+    rows = execute_query(sql, (student_id,), fetch=True)
+    return rows[0]['name'] if rows else None
+
 # --- Grading Support ---
 
 def get_ungraded_submissions(assignment_id: int, limit: int = 100, force: bool = False) -> List[Dict]:

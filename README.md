@@ -2,6 +2,13 @@
 
 A Docker-based Python assignment grading system with Snowboard (LMS) integration.
 
+## Lecture ID
+
+| ID | Section |
+|---|---|
+| 86345 | 001분반 |
+| 86347 | 003분반 |
+
 ## Setup & Dependencies
 
 This project uses a strict Conda environment policy.
@@ -33,9 +40,13 @@ DB_USER=root
 DB_PASSWORD=your_password
 DB_NAME=PythonJudgeSystem
 
-# Snowboard Login (Optional, for automatic login)
+# Snowboard Login
 SNOWBOARD_USER=your_id
 SNOWBOARD_PASSWORD=your_pw
+
+# Telegram Notifications
+TELEGRAM_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
 ```
 
 ### 3. Initialize Database
@@ -58,12 +69,12 @@ Continuously fetches new submissions (`requiregrading`), grades them, and upload
 
 - **Manual Override**:
   ```bash
-  python src/main.py monitor --lecture 80794 --assignment 1808032
+  python src/main.py monitor --lecture 86347 --assignment 1961959
   ```
 
 - **Force Re-Evaluation** (Dangerous):
   ```bash
-  python src/main.py monitor --lecture 80794 --assignment 1808032 --force
+  python src/main.py monitor --lecture 86347 --assignment 1961959 --force
   ```
   *Loops while forcing full re-evaluation of ALL history (fetch `submitted` status). Use with caution or `oneshot` preferred.*
 
@@ -72,19 +83,19 @@ Perform a single fetch-grade-upload cycle and exit. Ideal for manual triggering 
 
 - **Standard Run**:
   ```bash
-  python src/main.py oneshot --lecture 80794 --assignment 1808032
+  python src/main.py oneshot --lecture 86347 --assignment 1961959
   ```
 
 - **Force Re-Run** (Updates History):
   ```bash
-  python src/main.py oneshot --lecture 80794 --assignment 1808032 --force
+  python src/main.py oneshot --lecture 86347 --assignment 1961959 --force
   ```
   *Fetches entire submission history, creating a new "Forced" entry for every student, and re-grades the latest version.*
 
 ### Evaluate Local File
 Debug a specific file locally.
 ```bash
-python src/main.py eval --assignment 1808032 --submission tests/sample.py
+python src/main.py eval --assignment 1961959 --submission /tmp/solution_1961959.py --build
 ```
 
 ## Configuration
@@ -92,11 +103,13 @@ python src/main.py eval --assignment 1808032 --submission tests/sample.py
 - **Assignment Rules**: `assignments/<id>/assignment.yaml`
 - **Monitor Settings**: `config/monitor.yaml`
   ```yaml
-  refresh_interval: 60
+  refresh_interval: 5
   lectures:
-    - 80794
+    - 86345 # 001분반
+    - 86347 # 003분반
   blacklist:
-    - 1234567
+    - 1961998 # 1분반 개발환경 구축
+    - 1961958 # 3분반 개발환경 구축
   ```
 
 ## Verdicts
@@ -119,14 +132,17 @@ Each assignment must have a dedicated folder in the `assignments/` directory nam
 
 ```
 assignments/
-└── [Assignment_ID]/          # e.g., 1808032
+└── [Assignment_ID]/          # e.g., 1802077
     ├── assignment.yaml       # Configuration file (Required)
     ├── testcases/            # Test Case Directory (Standard Mode)
-    │   ├── input_1.txt
-    │   ├── output_1.txt
-    │   ├── input_2.txt
-    │   └── output_2.txt
-    ├── run_after.py          # Custom Check Script (Optional for Standard, creating 'Semi-Special' behavior)
+    │   ├── 1/
+    │   │   ├── input.txt
+    │   │   └── output.txt
+    │   ├── 2/
+    │   │   ├── input.txt
+    │   │   └── output.txt
+    │   └── ...
+    ├── run_after.py          # Custom Check Script (Optional, fuzzy output matching)
     └── evaluator.py          # Full Control Script (Special Mode Only)
 ```
 
@@ -159,9 +175,9 @@ build:
 Standard Judge runs the student's code against input files and compares the output with expected output files.
 
 ### 3.1. Test Cases
-- Place pairs of files in the `testcases/` directory.
-- Naming convention: `input_X.txt` and `output_X.txt` (where X is an index or name).
-- The system automatically discovers matching pairs.
+- Create numbered subdirectories in `testcases/` (e.g., `1/`, `2/`, `3/`).
+- Each subdirectory contains `input.txt` and `output.txt`.
+- The system automatically discovers and sorts test case directories.
 
 ### 3.2. Custom Output Checking (`run_after.py`)
 By default, the system performs an **Exact Match** (strip whitespace).
@@ -206,3 +222,21 @@ The system executes this script natively (inside the container).
 - It must print JSON-formatted result to stdout (or specific file descriptor) if custom reporting is needed, OR simply raise exceptions on failure.
 - *(Note: Specific API for Special Judge is defined in `src/core/special_judge.py` - currently implemented as running a custom script that returns a Verdict).*
 
+## 5. Telegram Notifications
+
+The system sends Telegram alerts for monitor start/stop, loop errors, and grading failures. Configure via `.env`:
+- `TELEGRAM_TOKEN`: Bot API token
+- `TELEGRAM_CHAT_ID`: Target chat ID
+
+Notifications fail silently — they never crash the grading system.
+
+## 6. File Validation
+
+Submissions are validated before evaluation:
+- **Empty file** → Score 0, comment in Korean
+- **Wrong extension** (not `.py`) → Score 0
+- **Jupyter Notebook disguised as `.py`** → Score 0
+
+## 7. AI Workflow
+
+Use `/prepare-grading-rule` to have the AI agent prepare a complete grading rule for a new assignment. See `.agent/workflows/prepare-grading-rule.md`.

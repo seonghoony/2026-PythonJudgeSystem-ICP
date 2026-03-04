@@ -24,6 +24,10 @@ from src.core.special_judge import SpecialJudge
 # Infrastructure
 from src.infrastructure.snowboard import SnowBoard
 from src.infrastructure import database as db
+from src.infrastructure.telegram import push
+
+# Utils
+from src.utils.file_validator import validate_submission
 
 # Setup Logging
 logging.basicConfig(
@@ -97,7 +101,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         aname = row['과제']
         
         if not aid: continue
-        
+         
         # Filter by assignment if requested
         if assignment_id and str(assignment_id) != str(aid):
             continue
@@ -242,14 +246,35 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
         
         try:
             content = db.get_file_content(md5)
+            
+            # --- Inline File Validation (pre-evaluation) ---
+            is_valid, validation_error = validate_submission(content)
+            if not is_valid:
+                attempt_count = db.get_submission_count(int(assignment_id), student_id)
+                comment = f"{attempt_count}번째 시도. {validation_error}"
+                logger.info(f"  -> WA (Validation Failed: {validation_error}) {'[DRY RUN]' if dry_run else ''}")
+                if not dry_run:
+                    db.update_submission_result(sid, 0.0, "WA", comment)
+                    
+                    # Upload to Snowboard
+                    if sb and grade_url:
+                        try:
+                            sb.submit_score(grade_url, 0.0, comment)
+                        except Exception as e:
+                            logger.error(f"  Upload Error: {e}")
+                continue
+            
             with tempfile.NamedTemporaryFile(suffix=".py", delete=True) as tmp:
                 tmp.write(content)
                 tmp.flush()
                 
+                # Look up student name for Docker env
+                student_name = db.get_student_name(student_id) or ""
+                
                 result = engine.evaluate(
                     Path(tmp.name), 
                     assignment_dir, 
-                    student_info={"student_id": student_id}
+                    student_info={"student_id": student_id, "student_name": student_name}
                 )
                 
                 # Verdict Logic
@@ -354,6 +379,7 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                     
         except Exception as e:
             logger.error(f"Grading failed for {sid}: {e}")
+            push(f"채점 오류 발생! Submission {sid}: {e}")
             if not dry_run:
                 db.update_submission_result(sid, 0.0, "SYS", f"Judge Error: {e}")
 
@@ -425,6 +451,7 @@ def cmd_oneshot(args):
 def cmd_monitor(args):
     """Infinite loop mode."""
     logger.info(f"Starting Monitor (Dry-Run: {args.dry_run}, Force: {args.force})")
+    push("채점기 시작했습니다.")
     
     while True:
         try:
@@ -511,9 +538,11 @@ def cmd_monitor(args):
             
         except KeyboardInterrupt:
             logger.info("Halting.")
+            push("채점기 종료되었습니다.")
             break
         except Exception as e:
             logger.error(f"Monitor Loop Error: {e}")
+            push(f"모니터 루프 에러 발생! {e}")
             time.sleep(10)
 
 def main():

@@ -15,6 +15,10 @@ ASSIGNMENT_DIR = Path("/assignment") # Mount point for assignment data
 MODE = os.environ.get("JUDGE_MODE", "standard") # 'standard' or 'special'
 TIMEOUT = int(os.environ.get("JUDGE_TIMEOUT", "5"))
 
+# Student Info (passed via Env Vars from host)
+STUDENT_ID = os.environ.get("STUDENT_ID", "")
+STUDENT_NAME = os.environ.get("STUDENT_NAME", "")
+
 def find_entry_point():
     """Finds the python script to run."""
     if TARGET_FILE.exists():
@@ -155,7 +159,8 @@ except Exception as e:
                 capture_output=True,
                 text=True,
                 timeout=TIMEOUT,
-                cwd=str(entry_point.parent) # Run in submission dir
+                cwd=str(entry_point.parent), # Run in submission dir
+                env={**os.environ, "STUDENT_ID": STUDENT_ID, "STUDENT_NAME": STUDENT_NAME}
             )
             
             res["stdout"] = proc.stdout

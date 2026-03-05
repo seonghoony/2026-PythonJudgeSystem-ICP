@@ -43,10 +43,6 @@ def run_pre_script():
     pre_script = ASSIGNMENT_DIR / "run_before.py"
     if pre_script.exists():
         try:
-            # Execute in global scope? 
-            # For special judge (import based), this matters. 
-            # For standard judge (subprocess based), this only affects the launcher's env, 
-            # checking if we need to propagate env vars.
             print(f"[Launcher] Executing {pre_script}...", file=sys.stderr)
             exec(pre_script.read_text(), globals())
         except Exception as e:
@@ -62,7 +58,6 @@ def run_standard_judge(entry_point):
         print(f"[Launcher] Error: {testcases_dir} does not exist.", file=sys.stderr)
         return
 
-    # Assuming numbered directories 1, 2, 3... or flat input_*.txt?
     # Support Directory-based (testcases/1/input.txt) AND Flat-file (testcases/input_1.txt)
     
     # 1. Directory based
@@ -87,7 +82,7 @@ def run_standard_judge(entry_point):
     flat_cases.sort(key=lambda x: x["id"])
 
     # Combine (prioritizing dirs if needed, but usually one or the other)
-    # Loop strategy:
+
     
     all_cases = []
     for d in cases_dirs:
@@ -237,7 +232,7 @@ def run_special_judge(entry_point):
         # Determine success/failure based on exit code or output
         # We wrap the stdout in markers for the host to parse
         print("___JUDGE_RESULT_START___")
-        # If grader failed (nonzero), we might want to report RTE if stdout is empty
+
         if res.returncode != 0:
             if not res.stdout.strip():
                  # Generate a JSON error if script crashed without output

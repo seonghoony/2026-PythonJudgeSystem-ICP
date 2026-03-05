@@ -53,8 +53,6 @@ class SpecialJudge(JudgeEngine):
                     
                     total_score = 0
                     for res in results_data:
-                        # Map fields if necessary, assuming grader returns standard schema keys
-                        # If grader returns minimal info, we might need defaults
                         tc = TestCaseResult(
                             test_case_id=res.get("test_case_id", "1"),
                             is_correct=res.get("is_correct", False),
@@ -80,12 +78,6 @@ class SpecialJudge(JudgeEngine):
                         eval_result.total_score = 0.0
                     
                 else:
-                    # If special judge prints raw text instead of JSON...
-                    # Current launcher wraps timeout/error in JSON.
-                    # If grader script prints arbitrary stuff, we fail to parse.
-                    # We assume grader.py is written to output JSON per our spec?
-                    # Or maybe we act leniently?
-                    # Let's report system error for now if protocol violated.
                     eval_result.system_error = f"Special Judge Output Format Error.\nStdout: {stdout[:500]}"
                     
             except json.JSONDecodeError:

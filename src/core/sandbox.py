@@ -98,7 +98,7 @@ class DockerSandbox:
         # 1. Submission: mapped to /submission (directory) or /Target.py (file)
         # Architecture says: "Mount Student Submission -> Read-Only"
         # Since we use launcher, we mount submission to /submission dir or /Target.py
-        # Current implementation assumes auto-detection in launcher.
+
         
         mount_cmd = ""
         if submission_path.is_dir():
@@ -120,11 +120,6 @@ class DockerSandbox:
         env_cmd = f"-e JUDGE_MODE={mode} -e JUDGE_TIMEOUT={resources.timeout} "
         if env_vars:
             for k, v in env_vars.items():
-                # Simple sanitization to prevent injection if value has spaces/quotes
-                # Ideally use shlex.quote but here we assume safe alphanum or use docker API
-                # For shell=True, quotes are risky. 
-                # Better: only allow specific set or trust caller.
-                # Let's wrap value in quotes.
                 env_cmd += f"-e {k}='{v}' "
 
         # Docker Command

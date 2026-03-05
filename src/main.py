@@ -286,7 +286,7 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
         md5 = sub['file_md5']
         
         # Override Grade URL if fresh
-        grade_url = None # Legacy, usually None now
+        grade_url = None
         if url_map and student_id in url_map:
             grade_url = url_map[student_id]
             
@@ -382,7 +382,7 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                              # Prioritize stderr for Python tracebacks (StandardJudge)
                              # Only log if stderr is present (indicates Runtime Error / Exception)
                              # We ignore 'message' here (e.g. "Wrong Answer", "Time Limit Exceeded") 
-                             # as per user request to show logs only for exceptions.
+
                              raw_error = (res.stderr or "").strip()
                              
                              if raw_error:

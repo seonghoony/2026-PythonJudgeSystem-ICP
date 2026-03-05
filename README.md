@@ -236,7 +236,3 @@ Submissions are validated before evaluation:
 - **Empty file** → Score 0, comment in Korean
 - **Wrong extension** (not `.py`) → Score 0
 - **Jupyter Notebook disguised as `.py`** → Score 0
-
-## 7. AI Workflow
-
-Use `/prepare-grading-rule` to have the AI agent prepare a complete grading rule for a new assignment. See `.agent/workflows/prepare-grading-rule.md`.

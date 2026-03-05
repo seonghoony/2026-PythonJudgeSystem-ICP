@@ -13,7 +13,7 @@ def calculate_md5(*args: Any, read_path_object: bool = False) -> str:
             if arg.exists():
                 arg = arg.read_bytes()
             else:
-                arg = b"" # Handle missing file gracefully or error? Legacy didn't check.
+                arg = b""
         
         if isinstance(arg, str):
             arg = arg.encode()

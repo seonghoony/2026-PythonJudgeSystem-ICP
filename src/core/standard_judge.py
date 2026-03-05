@@ -33,7 +33,6 @@ class StandardJudge(JudgeEngine):
                 shutil.copy2(submission_path, submission_dest / "Target.py")
                 
             # 2. Run Sandbox
-            # We assume DockerSandbox.run takes the directory containing submission files
             try:
                 raw_result = DockerSandbox.run(
                     self.config,
@@ -79,7 +78,7 @@ class StandardJudge(JudgeEngine):
             custom_validator = self._load_validator(assignment_dir)
             
             # Load expected outputs to compare if validator exists
-            # (Launcher did exact match, but validator might override 'False' to 'True')
+
             
             for res_data in results_json:
                  tc_result = TestCaseResult(**res_data)
@@ -93,8 +92,7 @@ class StandardJudge(JudgeEngine):
                          tc_result.system_error = f"Hook Error: {e}"
                  
                  if not tc_result.is_correct:
-                     # Find expected output for debugging/validation
-                     # Assuming testcase structure: testcases/{id}/output.txt
+                     # Find expected output
                      output_file = assignment_dir / "testcases" / tc_result.test_case_id / "output.txt"
                      # Also try input_{id}.txt / output_{id}.txt
                      if not output_file.exists():

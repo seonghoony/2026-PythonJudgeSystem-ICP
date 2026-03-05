@@ -20,9 +20,7 @@ def sanitize_traceback(text: str) -> str:
                 # Extract path
                 path_part = stripped.split('"')[1]
                 
-                # Check whitelist
-                # We assume student code is always in /submission directory or named Target.py in root
-                # And <string> for exec() calls
+                # Whitelist: only show student code paths
                 if "/submission/" in path_part or "Target.py" in path_part or "<string>" in path_part:
                     skip_next = False
                     filtered.append(line)

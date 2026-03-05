@@ -154,18 +154,11 @@ class SnowBoard:
         
         df = pd.DataFrame(data=data, columns=headers)
         
-        # Add metadata (ID parsing) - simplistic extraction matching legacy
-        # Need to re-fetch raw tds to extract links
+        # Extract assignment IDs from links
         raw_tds = [tr.find_all('td') for tr in rows[1:]]
         
         assignment_ids = []
         for tds in raw_tds:
-            # Assuming '과제' column has the link
-            # We need to find the column index for '과제'
-            # Or just search 2nd column as per legacy? 
-            # Legacy: columns=[th.text for th in rows[0].find_all('th')] -> df['과제']
-            # We need to be careful with column names matching strictly.
-            # Let's try to find the link in any 'td'
             link_found = False
             for td in tds:
                 a_tag = td.find('a')
@@ -186,9 +179,6 @@ class SnowBoard:
         
         if '종료 일시' in df.columns:
             df = df[df['종료 일시'] != '-']
-            # Pandas might auto-parse, or we force it.
-            # df['종료 일시'] = pd.to_datetime(df['종료 일시']) # Can be risky with locales
-            pass
 
         return df
 
@@ -209,10 +199,7 @@ class SnowBoard:
         response = self.s.get(url)
         bs = BeautifulSoup(response.text, 'html.parser')
 
-        # -- Option setting logic omitted for brevity unless critical --
-        # Legacy code sets options via POST if they differ. 
-        # We assume for now we just want to fetch. If we need to change paging, we must implement the POST.
-        # Let's implement minimal paging toggle for 'rows_per_page=-1' (All)
+        # Update view options if needed (per-page count, filter)
         
         current_perpage = bs.find('select', {'id': 'id_perpage'})
         current_filter = bs.find('select', {'name': 'filter'})
@@ -260,7 +247,7 @@ class SnowBoard:
             elif '최종 수정' in h: headers.append('최종 수정')
             elif '파일' in h or 'File' in h: headers.append('첨부파일') # Maps to 첨부파일명 logic
             else: headers.append(h)
-        # Some headers might be empty/checkboxes. Legacy handles this.
+
         
         # Extract Data
         data = []
@@ -269,34 +256,12 @@ class SnowBoard:
         
         for row in valid_rows:
             tds = row.find_all('td')
-            # Only keep tds that are part of the grading table (id starts with mod_assign_grading)
-            # Legacy logic: if 'id' in td.attrs and td.attrs['id'].startswith('mod_assign_grading')
             valid_tds = [td for td in tds if 'id' in td.attrs and td.attrs['id'].startswith('mod_assign_grading')]
             data.append(valid_tds)
 
-        # Parse content of TDs
-        parsed_data = []
-        for row_tds in data:
-            # We need to extract text AND links
-            parsed_row = []
-            for td in row_tds:
-                parsed_row.append(td.text.strip())
-            parsed_data.append(parsed_row)
-            
-        # Adjust headers length to match data (because we filtered tds)
-        # This is tricky without exact mapping.
-        # Legacy code does: columns = [th.find_all(string=True)...] and maps by index?
-        # Let's trust that valid_tds map to headers roughly.
-        
-        # Simplified:
-        # We need specific fields: '이름', '학번', '최근 제출일', '첨부파일'
-        # Let's look for them in headers
-        # NOTE: This parsing is fragile. For migration, we might just want to return the raw objects or mapped dicts.
-        
-        # Better strategy: List of dicts
+        # Build list of dicts with extracted fields
         list_of_dicts = []
         for i, row_tds in enumerate(data):
-            # We need to find files and links here
             row_dict = {}
             for j, td in enumerate(row_tds):
                 if j < len(headers):
@@ -313,7 +278,7 @@ class SnowBoard:
                          if a_tag:
                              row_dict['성적버튼href'] = a_tag['href']
             
-            # Legacy also extracted '제출변경방지href' from dropdown
+            # Extract 제출변경방지href from dropdown
             tr_orig = valid_rows[i]
             dropdown = tr_orig.find('div', {'class': 'dropdown-menu'})
             if dropdown:
@@ -378,7 +343,7 @@ class SnowBoard:
         
         # Timestamp parsing handling
         ts_str = row.get('최근 제출일', '0000-00-00')
-        # Basic cleanup or just use as is in filename (safe chars)
+
         ts_safe = ts_str.replace(':', '').replace(' ', '_')
         
         fname = row.get('첨부파일명', 'submission.py')
@@ -485,13 +450,10 @@ class SnowBoard:
         bs = BeautifulSoup(response.text, 'html.parser')
 
         inputs = bs.find('form', {'class': 'gradeform mform'}).find_all('input')
-        # Helper to filter hidden inputs
+
         data = {i['name']: i['value'] for i in inputs if 'name' in i.attrs}
         
-        # Remove conflicting buttons (Cancel, Save & Next, etc)
-        # We only want 'savegrade'
-        # Strategy: Iterate keys, if key looks like a button and is not savegrade, remove it.
-        # But simpler: explicit list of known Moodle buttons to kill.
+        # Remove conflicting submit buttons
         buttons_to_remove = [
             'saveandshownext', 'cancelbutton', 'nosaveandnext', 'nosaveandprevious'
         ]
@@ -539,8 +501,7 @@ class SnowBoard:
             logger.error(f"  Snowboard Error Class: {error_msg.get_text(strip=True)}")
             return False
 
-        # 3. Fallback: If no success alert AND no error alert, assume failure (Strict Mode requested by User)
-        # UPDATE: User requires "All successful". Combined with Unified Session, "No Error" safely implies "No Change".
+        # Fallback: no success/error alert — assume no change
         logger.info("  Success message not found, but no errors detected. Assuming 'No Change' success.")
         return True
 

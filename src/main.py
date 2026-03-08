@@ -31,9 +31,13 @@ from src.infrastructure.telegram import push
 from src.utils.file_validator import validate_submission
 
 # Setup Logging
+from rich.logging import RichHandler
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(message)s',
+    datefmt='[%Y-%m-%d %X]',
+    handlers=[RichHandler(rich_tracebacks=True, show_path=False)]
 )
 logger = logging.getLogger(__name__)
 
@@ -88,7 +92,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
     if sb is None:
         sb = SnowBoard()
     
-    logger.info(f"Fetching assignments for lecture {lecture_id}...")
+    logger.debug(f"Fetching assignments for lecture {lecture_id}...")
     df_assign = sb.list_assignments(str(lecture_id))
     if df_assign.empty:
         logger.warning("No assignments found.")
@@ -123,19 +127,19 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
     fresh_urls = {} # Transient storage for grade_urls  
     lock_urls = {}  # Transient storage for 제출변경방지href (submission lock)
     for aid, item in assignments.items():
-        logger.info(f"Fetching submissions for {item.get('title')} ({aid}) [Filter: {filter_status}]...")
+        logger.debug(f"Fetching submissions for {item.get('title')} ({aid}) [Filter: {filter_status}]...")
         
         # 1. List Submissions
         df = sb.list_submissions(aid, filter_status=filter_status)
         db.ensure_assignment(int(aid), lecture_id, item.get('title'))
         
         if df.empty:
-            logger.info("  No submissions found.")
+            logger.debug("  No submissions found.")
             db.update_assignment_fetch_time(int(aid))
             continue
 
         total = len(df)
-        logger.info(f"Found {total} submissions.")
+        logger.debug(f"Found {total} submissions.")
         count = 0
         
         for _, row in df.iterrows():
@@ -454,7 +458,7 @@ def run_loop_body(lecture_id: int, assignment_id: int, dry_run: bool, force: boo
         # Determine filter: force -> 'submitted', else 'requiregrading'
         filter_target = 'submitted' if force else 'requiregrading'
         
-        logger.info(f"Processing Assignment {assignment_id} (Lecture {lecture_id}) [Force={force}]")
+        logger.debug(f"Processing Assignment {assignment_id} (Lecture {lecture_id}) [Force={force}]")
             
         fresh_urls, lock_urls = run_fetch(lecture_id, assignment_id, filter_status=filter_target, force=force, sb=sb)
         
@@ -485,6 +489,7 @@ def cmd_evaluate(args):
         sys.exit(1)
 
 def cmd_oneshot(args):
+    from rich.status import Status
     """Single run mode."""
     logger.info(f"Starting Oneshot (Dry-Run: {args.dry_run}, Force: {args.force})")
     
@@ -509,104 +514,113 @@ def cmd_oneshot(args):
     # Actually, run_fetch WILL initialize its own SB if we pass None.
     # But for oneshot we want unified.
     
-    run_loop_body(int(args.lecture), int(args.assignment), args.dry_run, args.force, sb=sb)
+    with Status(f"[bold green]Running oneshot for Assign {args.assignment} / Lec {args.lecture}...", spinner="dots"):
+        run_loop_body(int(args.lecture), int(args.assignment), args.dry_run, args.force, sb=sb)
 
 def cmd_monitor(args):
+    from rich.status import Status
+    from datetime import datetime
     """Infinite loop mode."""
     logger.info(f"Starting Monitor (Dry-Run: {args.dry_run}, Force: {args.force})")
     push("채점기 시작했습니다.")
     
-    while True:
-        try:
-            # Reload Config
-            conf = load_monitor_config()
-            interval = conf.get("refresh_interval", 60)
-            lectures = conf.get("lectures", [])
-            
-            # Explicit overrides
-            if args.lecture:
-                lectures = [int(args.lecture)] # Just check this lecture
-            
-            commited_whitelist = conf.get("whitelist", [])
-            raw_blacklist = conf.get("blacklist", [])
-            blacklist = [int(x) for x in raw_blacklist]
-            whitelist = [int(x) for x in commited_whitelist] if commited_whitelist else []
+    with Status("[bold green]Starting monitor...", spinner="dots") as status:
+        while True:
+            try:
+                # Reload Config
+                conf = load_monitor_config()
+                interval = conf.get("refresh_interval", 60)
+                lectures = conf.get("lectures", [])
+                
+                # Explicit overrides
+                if args.lecture:
+                    lectures = [int(args.lecture)] # Just check this lecture
+                
+                commited_whitelist = conf.get("whitelist", [])
+                raw_blacklist = conf.get("blacklist", [])
+                blacklist = [int(x) for x in raw_blacklist]
+                whitelist = [int(x) for x in commited_whitelist] if commited_whitelist else []
 
-            # Unified SnowBoard for this iteration
-            sb = SnowBoard()
-            now = pd.Timestamp.now()
-            
-            for lecture_id in lectures:
-                logger.debug(f"Checking Lecture {lecture_id}...")
-                try:
-                    df = sb.list_assignments(str(lecture_id))
-                    if df.empty:
-                        continue
-                    
-                    for _, row in df.iterrows():
-                        aid = row.get('id_assignment')
-                        if not aid: continue
-                        aid_int = int(aid)
+                # Unified SnowBoard for this iteration
+                sb = SnowBoard()
+                now = pd.Timestamp.now()
+                now_str = datetime.now().strftime("%H:%M:%S")
+                
+                for lecture_id in lectures:
+                    status.update(f"[bold green]Checking Lecture {lecture_id} (Last check: {now_str})...")
+                    logger.debug(f"Checking Lecture {lecture_id}...")
+                    try:
+                        df = sb.list_assignments(str(lecture_id))
+                        if df.empty:
+                            continue
                         
-                        # Decision Logic
-                        should_process = False
-                        
-                        # 1. CLI Override (Manual Selection)
-                        if args.assignment:
-                            if str(args.assignment) == str(aid):
-                                should_process = True
+                        for _, row in df.iterrows():
+                            aid = row.get('id_assignment')
+                            if not aid: continue
+                            aid_int = int(aid)
+                            aname = row.get('과제', 'Unknown')
+                            
+                            # Decision Logic
+                            should_process = False
+                            
+                            # 1. CLI Override (Manual Selection)
+                            if args.assignment:
+                                if str(args.assignment) == str(aid):
+                                    should_process = True
+                                else:
+                                    continue # Skip unrelated assignments if filtering by ID
+                            
+                            elif args.lecture: 
+                                 # Check date for safety?
+                                 end_date_str = row.get('종료 일시', '-')
+                                 if end_date_str and end_date_str != '-':
+                                     try:
+                                         end_dt = pd.to_datetime(end_date_str)
+                                         if end_dt > now:
+                                             should_process = True
+                                     except:
+                                         pass
+                                 else:
+                                     should_process = True # No end date
+                                 
                             else:
-                                continue # Skip unrelated assignments if filtering by ID
-                        
-                        elif args.lecture: 
-                             # Check date for safety?
-                             end_date_str = row.get('종료 일시', '-')
-                             if end_date_str and end_date_str != '-':
-                                 try:
-                                     end_dt = pd.to_datetime(end_date_str)
-                                     if end_dt > now:
-                                         should_process = True
-                                 except:
-                                     pass
-                             else:
-                                 should_process = True # No end date
-                             
-                        else:
-                            # Standard Monitor (No overrides)
-                            if aid_int in blacklist:
-                                continue
-                                
-                            if aid_int in whitelist:
-                                should_process = True
-                            else:
-                                # Date check
-                                end_date_str = row.get('종료 일시', '-')
-                                if end_date_str and end_date_str != '-':
-                                    try:
-                                        end_dt = pd.to_datetime(end_date_str)
-                                        if end_dt > now:
-                                            should_process = True
-                                    except:
-                                        pass
-                        
-                        if should_process:
-                             # Pass unified SB
-                             run_loop_body(lecture_id, int(aid), args.dry_run, args.force, sb=sb)
-                             
-                except Exception as e:
-                    logger.error(f"Error checking lecture {lecture_id}: {e}")
+                                # Standard Monitor (No overrides)
+                                if aid_int in blacklist:
+                                    continue
+                                    
+                                if aid_int in whitelist:
+                                    should_process = True
+                                else:
+                                    # Date check
+                                    end_date_str = row.get('종료 일시', '-')
+                                    if end_date_str and end_date_str != '-':
+                                        try:
+                                            end_dt = pd.to_datetime(end_date_str)
+                                            if end_dt > now:
+                                                should_process = True
+                                        except:
+                                            pass
+                            
+                            if should_process:
+                                 # Pass unified SB
+                                 status.update(f"[bold green]Checking Lecture {lecture_id} - {aname} ({aid_int}) (Last check: {now_str})...")
+                                 run_loop_body(lecture_id, int(aid), args.dry_run, args.force, sb=sb)
+                                 
+                    except Exception as e:
+                        logger.error(f"Error checking lecture {lecture_id}: {e}")
 
-            logger.info(f"Sleeping {interval}s...")
-            time.sleep(interval)
-            
-        except KeyboardInterrupt:
-            logger.info("Halting.")
-            push("채점기 종료되었습니다.")
-            break
-        except Exception as e:
-            logger.error(f"Monitor Loop Error: {e}")
-            push(f"모니터 루프 에러 발생! {e}")
-            time.sleep(10)
+                status.update(f"[bold blue]Sleeping for {interval}s (Last check: {now_str})...")
+                logger.debug(f"Sleeping {interval}s...")
+                time.sleep(interval)
+                
+            except KeyboardInterrupt:
+                logger.info("Halting.")
+                push("채점기 종료되었습니다.")
+                break
+            except Exception as e:
+                logger.error(f"Monitor Loop Error: {e}")
+                push(f"모니터 루프 에러 발생! {e}")
+                time.sleep(10)
 
 def main():
     parser = argparse.ArgumentParser(description="Python Judge System CLI")

@@ -297,7 +297,15 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
         # Get Max Score from sub (default 100.0)
         max_score = float(sub.get('max_score', 100.0))
 
-        logger.info(f"Grading #{i+1}/{total} (Submission ID: {sid}, Student ID: {student_id}, Max: {max_score})...")
+        student_info = db.get_student_info(student_id)
+        if student_info and student_info.get('name') and student_info.get('department'):
+            student_str = f"{student_id} ({student_info['name']}, {student_info['department']})"
+        elif student_info and student_info.get('name'):
+            student_str = f"{student_id} ({student_info['name']})"
+        else:
+            student_str = str(student_id)
+
+        logger.info(f"Grading #{i+1}/{total} (Submission ID: {sid}, Student ID: {student_str}, Max: {max_score})...")
         
         try:
             content = db.get_file_content(md5)

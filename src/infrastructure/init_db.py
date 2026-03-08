@@ -31,7 +31,8 @@ DDL_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS students (
         student_id VARCHAR(50) PRIMARY KEY COMMENT 'University Student ID',
         name VARCHAR(100) NOT NULL,
-        department VARCHAR(100) DEFAULT NULL COMMENT 'Manually updated'
+        department VARCHAR(100) DEFAULT NULL COMMENT 'Manually updated',
+        photo MEDIUMBLOB DEFAULT NULL COMMENT 'Student Photo'
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
     

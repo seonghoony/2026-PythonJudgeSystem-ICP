@@ -211,6 +211,12 @@ def get_student_name(student_id: str) -> Optional[str]:
     rows = execute_query(sql, (student_id,), fetch=True)
     return rows[0]['name'] if rows else None
 
+def get_student_info(student_id: str) -> Optional[dict]:
+    """Look up student name and department by ID."""
+    sql = "SELECT name, department FROM students WHERE student_id = %s"
+    rows = execute_query(sql, (student_id,), fetch=True)
+    return rows[0] if rows else None
+
 # --- Grading Support ---
 
 def get_ungraded_submissions(assignment_id: int, limit: int = 100, force: bool = False) -> List[Dict]:
@@ -273,13 +279,13 @@ def get_assignment_stats(lecture_id: int) -> dict:
     sql = """
     SELECT 
         s.assignment_id,
-        COUNT(DISTINCT s.student_id) as uniq_students,
+        COUNT(DISTINCT CASE WHEN s.is_latest = 1 THEN s.student_id END) as uniq_students,
         COUNT(s.id) as num_submissions,
-        SUM(CASE WHEN s.verdict = 'AC' THEN 1 ELSE 0 END) as num_correct,
+        SUM(CASE WHEN s.is_latest = 1 AND s.verdict = 'AC' THEN 1 ELSE 0 END) as num_correct,
         MAX(a.last_fetched_at) as last_fetched_at
     FROM submissions s
     JOIN assignments a ON s.assignment_id = a.id
-    WHERE s.is_latest = 1 AND a.lecture_id = %s
+    WHERE a.lecture_id = %s
     GROUP BY s.assignment_id
     """
     rows = execute_query(sql, (lecture_id,), fetch=True)

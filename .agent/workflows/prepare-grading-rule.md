@@ -14,10 +14,12 @@ Two lectures may run concurrently, so `lecture_id` is required to identify the c
 
 ## Steps
 
-### 1. Crawl Instruction
+### 1. Locate and Analyze Instruction
 
-// turbo
-Run the crawler to download the assignment instruction:
+First, check if the user has provided local instruction files (e.g., in `assignments/new_assignments/` like `.tex` files or test `.py` scripts). 
+If local files exist, read them.
+
+If no local instructions are provided, ask the user if you should crawl Snowboard for the instruction. If yes, run the crawler to download the assignment instruction:
 
 ```bash
 cd /home/seonghoon/2026-PythonJudgeSystem-ICP && conda run -n PythonJudgeSystem python -c "
@@ -29,11 +31,7 @@ print(f'Saved to: {path}')
 "
 ```
 
-Replace `ASSIGNMENT_ID` with the actual ID. Note the `lecture_id` (LECTURE_ID) for later use in testing.
-
-### 2. Read and Analyze Instruction
-
-Read the downloaded instruction from `downloaded_instructions/ASSIGNMENT_ID.md`.
+Read the local files or the downloaded instruction from `downloaded_instructions/ASSIGNMENT_ID.md`.
 
 Analyze the instruction to determine:
 - **Is it I/O based?** (Standard Judge) — Student reads input, prints output. Look for "입력", "출력", example I/O pairs.
@@ -215,6 +213,31 @@ If you want to test the full fetch-grade-upload cycle against a real assignment:
 
 ```bash
 cd /home/seonghoon/2026-PythonJudgeSystem-ICP && conda run -n PythonJudgeSystem python src/main.py oneshot --lecture LECTURE_ID --assignment ASSIGNMENT_ID --dry-run
-```
-
 Replace both `LECTURE_ID` and `ASSIGNMENT_ID` with actual values.
+
+### 10. Link Assignments for Concurrent Lectures
+
+If the user asks to prepare the same rules for another lecture (e.g., creating soft links for `lecture_B`), follow this process:
+
+1. Fetch the assignment list for the second lecture to get the new `ASSIGNMENT_ID`s:
+```bash
+cd /home/seonghoon/2026-PythonJudgeSystem-ICP && conda run -n PythonJudgeSystem python -c "
+from dotenv import load_dotenv; load_dotenv()
+from src.infrastructure.snowboard import SnowBoard
+import urllib3; urllib3.disable_warnings()
+sb = SnowBoard()
+sb.s.timeout = 10 
+try:
+    df = sb.list_assignments('NEW_LECTURE_ID')
+    print(df[['id_assignment', '과제', '종료 일시']].to_string())
+except Exception as e:
+    print('Failed:', e)
+"
+```
+2. Match the exact assignments from the first lecture to the new `ASSIGNMENT_ID`s in the second lecture based on the title.
+3. Create soft links in the `assignments/` folder (DO NOT copy the whole directory):
+```bash
+cd /home/seonghoon/2026-PythonJudgeSystem-ICP/assignments
+ln -s ORIGINAL_ID NEW_ID
+```
+4. Verify the symlinks using `ls -l`.

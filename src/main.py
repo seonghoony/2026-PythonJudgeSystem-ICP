@@ -517,14 +517,59 @@ def cmd_oneshot(args):
     with Status(f"[bold green]Running oneshot for Assign {args.assignment} / Lec {args.lecture}...", spinner="dots"):
         run_loop_body(int(args.lecture), int(args.assignment), args.dry_run, args.force, sb=sb)
 
+def generate_table(monitor_state: dict) -> 'Table':
+    from rich.table import Table
+    table = Table(title="Monitor Dashboard", expand=True)
+    table.add_column("Active", justify="center", style="cyan")
+    table.add_column("Lecture")
+    table.add_column("Assgn ID", style="magenta")
+    table.add_column("Name")
+    table.add_column("Last Fetch")
+    table.add_column("Uniq Students", justify="right")
+    table.add_column("Submissions", justify="right")
+    table.add_column("AC Count", justify="right", style="green")
+
+    active_aid = monitor_state.get("active_assignment")
+    stats = monitor_state.get("stats", {})
+    now_str = monitor_state.get("last_check", "")
+    
+    table.caption = f"Last Check: {now_str}" if now_str else ""
+
+    for row in monitor_state.get("assignments", []):
+        aid = row["aid"]
+        lecture_id = row["lecture_id"]
+        aname = row["name"]
+        
+        is_active = "*" if active_aid == aid else ""
+        
+        astat = stats.get(aid, {})
+        uniq = str(astat.get('uniq_students', 0))
+        subs = str(astat.get('num_submissions', 0))
+        acs = str(astat.get('num_correct', 0))
+        last_fetch = astat.get('last_fetched_at', '-')
+        
+        if last_fetch and len(str(last_fetch)) > 19:
+            last_fetch = str(last_fetch)[:19]
+            
+        table.add_row(is_active, str(lecture_id), str(aid), aname, last_fetch, uniq, subs, acs)
+        
+    return table
+
 def cmd_monitor(args):
-    from rich.status import Status
+    from rich.live import Live
     from datetime import datetime
     """Infinite loop mode."""
     logger.info(f"Starting Monitor (Dry-Run: {args.dry_run}, Force: {args.force})")
     push("채점기 시작했습니다.")
     
-    with Status("[bold green]Starting monitor...", spinner="dots") as status:
+    monitor_state = {
+        "active_assignment": None,
+        "assignments": [],
+        "stats": {},
+        "last_check": ""
+    }
+    
+    with Live(generate_table(monitor_state), refresh_per_second=1) as live:
         while True:
             try:
                 # Reload Config
@@ -545,14 +590,21 @@ def cmd_monitor(args):
                 sb = SnowBoard()
                 now = pd.Timestamp.now()
                 now_str = datetime.now().strftime("%H:%M:%S")
+                monitor_state["last_check"] = now_str
+                
+                # First pass: Determine which assignments to track
+                monitor_state["assignments"] = []
                 
                 for lecture_id in lectures:
-                    status.update(f"[bold green]Checking Lecture {lecture_id} (Last check: {now_str})...")
                     logger.debug(f"Checking Lecture {lecture_id}...")
                     try:
                         df = sb.list_assignments(str(lecture_id))
                         if df.empty:
                             continue
+                            
+                        # Update DB stats for this lecture
+                        lec_stats = db.get_assignment_stats(lecture_id)
+                        monitor_state["stats"].update(lec_stats)
                         
                         for _, row in df.iterrows():
                             aid = row.get('id_assignment')
@@ -571,7 +623,6 @@ def cmd_monitor(args):
                                     continue # Skip unrelated assignments if filtering by ID
                             
                             elif args.lecture: 
-                                 # Check date for safety?
                                  end_date_str = row.get('종료 일시', '-')
                                  if end_date_str and end_date_str != '-':
                                      try:
@@ -582,7 +633,6 @@ def cmd_monitor(args):
                                          pass
                                  else:
                                      should_process = True # No end date
-                                 
                             else:
                                 # Standard Monitor (No overrides)
                                 if aid_int in blacklist:
@@ -591,7 +641,6 @@ def cmd_monitor(args):
                                 if aid_int in whitelist:
                                     should_process = True
                                 else:
-                                    # Date check
                                     end_date_str = row.get('종료 일시', '-')
                                     if end_date_str and end_date_str != '-':
                                         try:
@@ -602,14 +651,34 @@ def cmd_monitor(args):
                                             pass
                             
                             if should_process:
-                                 # Pass unified SB
-                                 status.update(f"[bold green]Checking Lecture {lecture_id} - {aname} ({aid_int}) (Last check: {now_str})...")
-                                 run_loop_body(lecture_id, int(aid), args.dry_run, args.force, sb=sb)
+                                monitor_state["assignments"].append({
+                                    "aid": aid_int,
+                                    "lecture_id": lecture_id,
+                                    "name": aname
+                                })
                                  
                     except Exception as e:
                         logger.error(f"Error checking lecture {lecture_id}: {e}")
 
-                status.update(f"[bold blue]Sleeping for {interval}s (Last check: {now_str})...")
+                # Update table before fetching submissions
+                live.update(generate_table(monitor_state))
+                
+                # Second pass: Process the filtered assignments
+                for task in monitor_state["assignments"]:
+                    monitor_state["active_assignment"] = task["aid"]
+                    live.update(generate_table(monitor_state))
+                    
+                    run_loop_body(task["lecture_id"], task["aid"], args.dry_run, args.force, sb=sb)
+                    
+                    # Update stats dynamically from DB after grading
+                    new_stats = db.get_assignment_stats(task["lecture_id"])
+                    monitor_state["stats"].update(new_stats)
+                    live.update(generate_table(monitor_state))
+
+                monitor_state["active_assignment"] = None
+                monitor_state["last_check"] = f"Sleeping until { (now + pd.Timedelta(seconds=interval)).strftime('%H:%M:%S') }"
+                live.update(generate_table(monitor_state))
+                
                 logger.debug(f"Sleeping {interval}s...")
                 time.sleep(interval)
                 

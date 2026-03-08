@@ -2,6 +2,8 @@
 
 A Docker-based Python assignment grading system with Snowboard (LMS) integration.
 
+![alt text](rsrc/image.png)
+
 ## Lecture ID
 
 | ID | Section |

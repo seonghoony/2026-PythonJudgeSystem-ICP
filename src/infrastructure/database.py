@@ -257,3 +257,55 @@ def update_submission_result(
     WHERE id = %s
     """
     execute_query(sql, (score, verdict, comment, failure_details, submission_id), commit=True)
+
+def get_assignment_stats(lecture_id: int) -> dict:
+    """
+    Returns a dict mapping assignment_id to stats for the dashboard:
+    {
+      assignment_id: {
+        'uniq_students': int,
+        'num_submissions': int,
+        'num_correct': int,
+        'last_fetched_at': str
+      }
+    }
+    """
+    sql = """
+    SELECT 
+        s.assignment_id,
+        COUNT(DISTINCT s.student_id) as uniq_students,
+        COUNT(s.id) as num_submissions,
+        SUM(CASE WHEN s.verdict = 'AC' THEN 1 ELSE 0 END) as num_correct,
+        MAX(a.last_fetched_at) as last_fetched_at
+    FROM submissions s
+    JOIN assignments a ON s.assignment_id = a.id
+    WHERE s.is_latest = 1 AND a.lecture_id = %s
+    GROUP BY s.assignment_id
+    """
+    rows = execute_query(sql, (lecture_id,), fetch=True)
+    
+    # We also want to include assignments that have 0 submissions but exist in the DB.
+    # So let's do a secondary query to get all assignments for the lecture.
+    sql_all = "SELECT id, last_fetched_at FROM assignments WHERE lecture_id = %s"
+    all_assigns = execute_query(sql_all, (lecture_id,), fetch=True)
+    
+    stats = {}
+    for a in all_assigns:
+        aid = a['id']
+        stats[aid] = {
+            'uniq_students': 0,
+            'num_submissions': 0,
+            'num_correct': 0,
+            'last_fetched_at': str(a.get('last_fetched_at') or '')
+        }
+        
+    for r in rows:
+        aid = r['assignment_id']
+        stats[aid] = {
+            'uniq_students': r['uniq_students'],
+            'num_submissions': r['num_submissions'],
+            'num_correct': int(r['num_correct'] or 0),
+            'last_fetched_at': str(r.get('last_fetched_at') or stats[aid]['last_fetched_at'])
+        }
+        
+    return stats

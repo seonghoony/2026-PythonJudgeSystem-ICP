@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PythonJudgeSystem Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --primary: #3b82f6;
+            --hover: #2563eb;
+            --accent: #10b981;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 2rem;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            color: white;
+            text-align: center;
+        }
+
+        .table-container {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            background-color: rgba(0,0,0,0.2);
+            padding: 1rem 1.5rem;
+            font-weight: 600;
+            color: #cbd5e1;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        td {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        tr {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        tr:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--accent);
+        }
+        
+        .ac-count {
+            color: var(--accent);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard - Lecture {{ lecture_id }}</h1>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Assgn ID</th>
+                        <th>Name</th>
+                        <th>Last Fetch</th>
+                        <th>Uniq Students</th>
+                        <th>Submissions</th>
+                        <th>AC Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for assignment in assignments %}
+                    <tr onclick="window.location.href='/{{ lecture_id }}/{{ assignment.id }}'">
+                        <td>{{ assignment.id }}</td>
+                        <td style="font-weight: 500;">{{ assignment.name }}</td>
+                        <td style="color: #94a3b8;">{{ assignment.last_fetch }}</td>
+                        <td>{{ assignment.uniq_students }}</td>
+                        <td>{{ assignment.submissions }}</td>
+                        <td class="ac-count">{{ assignment.ac_count }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not assignments %}
+                    <tr>
+                        <td colspan="6" style="text-align: center; color: #94a3b8; padding: 3rem;">
+                            No assignments found for this lecture.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

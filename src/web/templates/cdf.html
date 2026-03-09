@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Submission CDF - {{ assignment_name }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --primary: #3b82f6;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 2rem;
+            height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+            color: white;
+        }
+
+        .back-btn {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background-color: var(--border-color);
+        }
+
+        .chart-container {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            flex-grow: 1;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        #chart {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{{ assignment_name }} - Submission CDF</h1>
+        <a href="/{{ lecture_id }}" class="back-btn">← Back to Dashboard</a>
+    </div>
+    
+    <div class="chart-container">
+        <div id="chart"></div>
+    </div>
+
+    <script>
+        const chartDom = document.getElementById('chart');
+        const myChart = echarts.init(chartDom, 'dark');
+        
+        const dates = {{ dates|safe }};
+        const counts = {{ counts|safe }};
+
+        const option = {
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis',
+                formatter: function (params) {
+                    const date = new Date(params[0].value[0]);
+                    return `Date: ${date.toLocaleString()}<br/>Students: <b>${params[0].value[1]}</b>`;
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'time',
+                boundaryGap: false,
+                splitLine: {
+                    show: true,
+                    lineStyle: { color: '#334155' }
+                },
+                axisLabel: {
+                    formatter: (value) => {
+                        const date = new Date(value);
+                        return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:00`;
+                    }
+                }
+            },
+            yAxis: {
+                type: 'value',
+                name: 'Unique Students',
+                splitLine: {
+                    lineStyle: { color: '#334155' }
+                }
+            },
+            series: [
+                {
+                    name: 'Submissions',
+                    type: 'line',
+                    step: 'end',
+                    showSymbol: false,
+                    itemStyle: {
+                        color: '#3b82f6'
+                    },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(59, 130, 246, 0.5)' },
+                            { offset: 1, color: 'rgba(59, 130, 246, 0.05)' }
+                        ])
+                    },
+                    data: dates.map((date, index) => [date, counts[index]])
+                }
+            ]
+        };
+
+        myChart.setOption(option);
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            myChart.resize();
+        });
+    </script>
+</body>
+</html>

@@ -19,7 +19,7 @@ This project uses a strict Conda environment policy.
 Use `requirements.txt` or the direct command below.
 
 ```bash
-conda create -n PythonJudgeSystem -c conda-forge python=3.14 pydantic pyyaml pandas requests beautifulsoup4 docker-py lxml pymysql python-dotenv rich
+conda create -n PythonJudgeSystem -c conda-forge python=3.14 pydantic pyyaml pandas requests beautifulsoup4 docker-py lxml pymysql python-dotenv rich fastapi uvicorn jinja2
 conda activate PythonJudgeSystem
 ```
 
@@ -33,6 +33,7 @@ conda activate PythonJudgeSystem
 - `pymysql`: Database connectivity
 - `python-dotenv`: Environment variable management
 - `rich`: CLI status spinner and formatting
+- `fastapi`, `uvicorn`, `jinja2`: Web Server & Dashboard
 
 ### 2. Configure Environment
 Create a `.env` file in the project root:

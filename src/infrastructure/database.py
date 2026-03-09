@@ -315,3 +315,20 @@ def get_assignment_stats(lecture_id: int) -> dict:
         }
         
     return stats
+
+def get_cdf_data(assignment_id: int) -> list[dict]:
+    """
+    Returns data for the CDF graph (Unique students submitted over time).
+    Finds the earliest submission time for each student, and returns a chronologically sorted list.
+    """
+    sql = """
+    SELECT 
+        student_id,
+        MIN(submitted_at) as first_submission
+    FROM submissions
+    WHERE assignment_id = %s
+    GROUP BY student_id
+    ORDER BY first_submission ASC
+    """
+    rows = execute_query(sql, (assignment_id,), fetch=True)
+    return rows

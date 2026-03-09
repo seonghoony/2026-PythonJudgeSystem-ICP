@@ -8,6 +8,8 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from typing import Optional, List, Dict, Union
+import re
+import datetime
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -175,7 +177,43 @@ class SnowBoard:
         
         # Clean up data
         if '주' in df.columns:
-            df['주'] = df['주'].map(lambda x: x.split('주차')[0] if x else pd.NA).ffill()
+            # Use ffill to handle merged cells (assuming empty string for merged rows)
+            df['주'] = df['주'].replace('', pd.NA).ffill()
+
+            # Find the year to construct full dates from '종료 일시'
+            inferred_year = datetime.datetime.now().year
+            if '종료 일시' in df.columns:
+                valid_dt = df['종료 일시'][df['종료 일시'] != '-'].dropna()
+                if not valid_dt.empty:
+                    match = re.search(r'^(\d{4})', str(valid_dt.iloc[0]))
+                    if match:
+                        inferred_year = int(match.group(1))
+
+            week_nums = []
+            starts = []
+            ends = []
+            for x in df['주']:
+                if pd.isna(x) or not isinstance(x, str):
+                    week_nums.append(pd.NA)
+                    starts.append(None)
+                    ends.append(None)
+                    continue
+                
+                week_num = x.split('주차')[0].strip() if '주차' in x else pd.NA
+                week_nums.append(week_num)
+                
+                date_match = re.search(r'\[(\d+)월\s*(\d+)일\s*-\s*(\d+)월\s*(\d+)일\]', x)
+                if date_match:
+                    sm, sd, em, ed = date_match.groups()
+                    starts.append(f"{inferred_year}-{int(sm):02d}-{int(sd):02d}")
+                    ends.append(f"{inferred_year}-{int(em):02d}-{int(ed):02d}")
+                else:
+                    starts.append(None)
+                    ends.append(None)
+                    
+            df['주'] = week_nums
+            df['week_start'] = starts
+            df['week_end'] = ends
         
         if '종료 일시' in df.columns:
             df = df[df['종료 일시'] != '-']

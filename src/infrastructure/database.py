@@ -58,8 +58,7 @@ def execute_query(sql: str, args: tuple = (), commit: bool = False, fetch: bool 
 def ensure_lecture(lecture_id: int, name: str):
     """Upsert lecture."""
     sql = """
-    INSERT INTO lectures (id, name) VALUES (%s, %s)
-    ON DUPLICATE KEY UPDATE name = VALUES(name)
+    INSERT IGNORE INTO lectures (id, name) VALUES (%s, %s)
     """
     execute_query(sql, (lecture_id, name), commit=True)
 
@@ -91,13 +90,18 @@ def ensure_student(student_id: str, name: str, lecture_id: int):
     """
     execute_query(sql_enroll, (lecture_id, student_id), commit=True)
 
-def ensure_assignment(assignment_id: int, lecture_id: int, name: str):
+def ensure_assignment(assignment_id: int, lecture_id: int, name: str, week_start: Optional[str] = None, week_end: Optional[str] = None):
     """Upsert assignment."""
     sql = """
-    INSERT INTO assignments (id, lecture_id, name) VALUES (%s, %s, %s)
-    ON DUPLICATE KEY UPDATE name = VALUES(name), lecture_id = VALUES(lecture_id)
+    INSERT INTO assignments (id, lecture_id, name, week_start, week_end) 
+    VALUES (%s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE 
+        name = VALUES(name), 
+        lecture_id = VALUES(lecture_id),
+        week_start = COALESCE(VALUES(week_start), week_start),
+        week_end = COALESCE(VALUES(week_end), week_end)
     """
-    execute_query(sql, (assignment_id, lecture_id, name), commit=True)
+    execute_query(sql, (assignment_id, lecture_id, name, week_start, week_end), commit=True)
 
 def update_assignment_fetch_time(assignment_id: int):
     """Update last_fetched_at to NOW() for the given assignment."""

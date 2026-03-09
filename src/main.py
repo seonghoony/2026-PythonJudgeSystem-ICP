@@ -105,6 +105,8 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
     for _, row in df_assign.iterrows():
         aid = row['id_assignment']
         aname = row['과제']
+        week_start = row.get('week_start') if pd.notna(row.get('week_start')) else None
+        week_end = row.get('week_end') if pd.notna(row.get('week_end')) else None
         
         if not aid: continue
          
@@ -121,8 +123,8 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
             except Exception:
                 pass
         
-        assignments[int(aid)] = {'title': aname}
-        db.ensure_assignment(int(aid), lecture_id, aname)
+        assignments[int(aid)] = {'title': aname, 'week_start': week_start, 'week_end': week_end}
+        db.ensure_assignment(int(aid), lecture_id, aname, week_start, week_end)
 
     fresh_urls = {} # Transient storage for grade_urls  
     lock_urls = {}  # Transient storage for 제출변경방지href (submission lock)
@@ -131,7 +133,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         
         # 1. List Submissions
         df = sb.list_submissions(aid, filter_status=filter_status)
-        db.ensure_assignment(int(aid), lecture_id, item.get('title'))
+        db.ensure_assignment(int(aid), lecture_id, item.get('title'), item.get('week_start'), item.get('week_end'))
         
         if df.empty:
             logger.debug("  No submissions found.")

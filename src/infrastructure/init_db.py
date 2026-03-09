@@ -53,6 +53,8 @@ DDL_STATEMENTS = [
         id BIGINT PRIMARY KEY COMMENT 'Snowboard Assignment ID',
         lecture_id BIGINT NOT NULL,
         name VARCHAR(255) NOT NULL,
+        week_start DATE DEFAULT NULL,
+        week_end DATE DEFAULT NULL,
         last_fetched_at DATETIME DEFAULT NULL COMMENT 'Last time submissions were fetched for this assignment',
         FOREIGN KEY (lecture_id) REFERENCES lectures(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

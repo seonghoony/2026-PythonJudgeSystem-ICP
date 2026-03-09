@@ -41,7 +41,7 @@ async def dashboard_view(request: Request, lecture_id: int):
     
     assignments = []
     
-    sql = "SELECT id, name, last_fetched_at FROM assignments WHERE lecture_id = %s ORDER BY id DESC"
+    sql = "SELECT id, name, last_fetched_at FROM assignments WHERE lecture_id = %s AND (week_start IS NULL OR week_start <= NOW()) ORDER BY id ASC"
     rows = db.execute_query(sql, (lecture_id,), fetch=True)
     
     for row in (rows or []):
@@ -65,8 +65,13 @@ async def dashboard_view(request: Request, lecture_id: int):
             "ac_count": acs
         })
         
+    # Get the lecture name
+    sql_lecture = "SELECT name FROM lectures WHERE id = %s"
+    lecture_rows = db.execute_query(sql_lecture, (lecture_id,), fetch=True)
+    lecture_name = lecture_rows[0]['name'] if lecture_rows else f"Lecture {lecture_id}"
+        
     return templates.TemplateResponse(
-        request=request, name="dashboard.html", context={"lecture_id": lecture_id, "assignments": assignments}
+        request=request, name="dashboard.html", context={"lecture_id": lecture_id, "lecture_name": lecture_name, "assignments": assignments}
     )
 
 @app.get("/{lecture_id}/{assignment_id}", response_class=HTMLResponse)

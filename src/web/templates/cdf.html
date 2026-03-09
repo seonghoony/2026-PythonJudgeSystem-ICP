@@ -73,7 +73,7 @@
 <body>
     <div class="header">
         <h1>{{ assignment_name }} - Submission CDF</h1>
-        <a href="/{{ lecture_id }}" class="back-btn">← Back to Dashboard</a>
+        <a href="javascript:void(0)" onclick="window.location.href=window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));" class="back-btn">← Back to Dashboard</a>
     </div>
     
     <div class="chart-container">
@@ -81,74 +81,76 @@
     </div>
 
     <script>
-        const chartDom = document.getElementById('chart');
-        const myChart = echarts.init(chartDom, 'dark');
-        
-        const dates = {{ dates|safe }};
-        const counts = {{ counts|safe }};
+        (() => {
+            const chartDom = document.getElementById('chart');
+            const myChart = echarts.init(chartDom, 'dark');
+            
+            const dates = JSON.parse('{{ dates|safe }}');
+            const counts = JSON.parse('{{ counts|safe }}');
 
-        const option = {
-            backgroundColor: 'transparent',
-            tooltip: {
-                trigger: 'axis',
-                formatter: function (params) {
-                    const date = new Date(params[0].value[0]);
-                    return `Date: ${date.toLocaleString()}<br/>Students: <b>${params[0].value[1]}</b>`;
-                }
-            },
-            grid: {
-                left: '3%',
-                right: '4%',
-                bottom: '3%',
-                containLabel: true
-            },
-            xAxis: {
-                type: 'time',
-                boundaryGap: false,
-                splitLine: {
-                    show: true,
-                    lineStyle: { color: '#334155' }
-                },
-                axisLabel: {
-                    formatter: (value) => {
-                        const date = new Date(value);
-                        return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:00`;
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function (params) {
+                        const date = new Date(params[0].value[0]);
+                        return `Date: ${date.toLocaleString()}<br/>Students: <b>${params[0].value[1]}</b>`;
                     }
-                }
-            },
-            yAxis: {
-                type: 'value',
-                name: 'Unique Students',
-                splitLine: {
-                    lineStyle: { color: '#334155' }
-                }
-            },
-            series: [
-                {
-                    name: 'Submissions',
-                    type: 'line',
-                    step: 'end',
-                    showSymbol: false,
-                    itemStyle: {
-                        color: '#3b82f6'
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'time',
+                    boundaryGap: false,
+                    splitLine: {
+                        show: true,
+                        lineStyle: { color: '#334155' }
                     },
-                    areaStyle: {
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(59, 130, 246, 0.5)' },
-                            { offset: 1, color: 'rgba(59, 130, 246, 0.05)' }
-                        ])
-                    },
-                    data: dates.map((date, index) => [date, counts[index]])
-                }
-            ]
-        };
+                    axisLabel: {
+                        formatter: (value) => {
+                            const date = new Date(value);
+                            return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:00`;
+                        }
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: 'Unique Students',
+                    splitLine: {
+                        lineStyle: { color: '#334155' }
+                    }
+                },
+                series: [
+                    {
+                        name: 'Submissions',
+                        type: 'line',
+                        step: 'end',
+                        showSymbol: false,
+                        itemStyle: {
+                            color: '#3b82f6'
+                        },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(59, 130, 246, 0.5)' },
+                                { offset: 1, color: 'rgba(59, 130, 246, 0.05)' }
+                            ])
+                        },
+                        data: dates.map((date, index) => [date, counts[index]])
+                    }
+                ]
+            };
 
-        myChart.setOption(option);
+            myChart.setOption(option);
 
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            myChart.resize();
-        });
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                myChart.resize();
+            });
+        })();
     </script>
 </body>
 </html>

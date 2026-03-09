@@ -637,7 +637,7 @@ def cmd_monitor(args):
                                  if end_date_str and end_date_str != '-':
                                      try:
                                          end_dt = pd.to_datetime(end_date_str)
-                                         if end_dt > now:
+                                         if end_dt + pd.Timedelta(minutes=5) > now:
                                              should_process = True
                                      except:
                                          pass
@@ -655,7 +655,7 @@ def cmd_monitor(args):
                                     if end_date_str and end_date_str != '-':
                                         try:
                                             end_dt = pd.to_datetime(end_date_str)
-                                            if end_dt > now:
+                                            if end_dt + pd.Timedelta(minutes=5) > now:
                                                 should_process = True
                                         except:
                                             pass

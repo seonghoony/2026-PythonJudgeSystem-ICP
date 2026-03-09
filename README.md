@@ -102,6 +102,45 @@ Debug a specific file locally.
 python src/main.py eval --assignment 1961959 --submission /tmp/solution_1961959.py --build
 ```
 
+## Web Dashboard Service
+
+To run the web dashboard in the background automatically as a `systemd` user service:
+
+1. Create the systemd user directory if it doesn't exist:
+   ```bash
+   mkdir -p ~/.config/systemd/user
+   ```
+
+2. Create the service file (`~/.config/systemd/user/pythonjudge-dashboard.service`):
+   ```ini
+   [Unit]
+   Description=Python Judge System Dashboard
+   After=network.target
+
+   [Service]
+   Type=simple
+   WorkingDirectory=%h/2026-PythonJudgeSystem-ICP
+   ExecStart=%h/miniforge3/envs/PythonJudgeSystem/bin/python src/dashboard.py --port 8000
+   Restart=always
+   RestartSec=3
+
+   [Install]
+   WantedBy=default.target
+   ```
+
+3. Reload the systemd daemon, enable, and start the service:
+   ```bash
+   systemctl --user daemon-reload
+   systemctl --user enable pythonjudge-dashboard --now
+   ```
+
+4. Enable lingering so the service stays running even when you log out:
+   ```bash
+   loginctl enable-linger $USER
+   ```
+
+The dashboard will be available at `http://localhost:8000/<lecture_id>`.
+
 ## Configuration
 
 - **Assignment Rules**: `assignments/<id>/assignment.yaml`

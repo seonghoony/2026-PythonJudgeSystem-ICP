@@ -11,7 +11,11 @@ This workflow creates a new assignment for the current semester that maintains a
 ### 1. Analyze Previous Assignment (Optional)
 - Review the past assignment's concepts and difficulty level if provided.
 
-### 2. Draft New Assignment
+### 2. Consult the User (Mandatory)
+- Present the ideas or topics for the new assignment to the user and wait for their approval before proceeding to draft the actual assignment instructions and code.
+- If the user provides feedback or asks for changes, incorporate them and ask for approval again.
+
+### 3. Draft New Assignment
 - Prepare a very similar assignment in terms of difficulty level to the previous ones.
 - The new assignment MUST be written in Korean. All sentence endings for instructions to students MUST use the imperative form `~작성하라.`. Other explanations MUST use the plain form (e.g., `~주어진다.`, `~출력한다.`) instead of polite forms (`~합니다.`, `~작성하시오.` 등).
 - Insert `\newpage` right before the start of each assignment (i.e. `\section*{...}`) starting from the second assignment (e.g. Assignment 2-2) so they are placed on separated pages.

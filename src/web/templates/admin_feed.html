@@ -283,22 +283,22 @@
                                  onerror="this.src='data:image/svg+xml;base64,...'">
                             <div class="student-details">
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <a href="/admin/roaster/{{ item.lecture_id }}/{{ item.student_id }}/{{ item.assignment_id }}" 
-                                       style="text-decoration: none;" class="student-name">
-                                       {{ item.student_name }}
-                                    </a>
-                                    {% if item.lecture_name and '001' in item.lecture_name %}
-                                        <span class="badge-lecture blue" style="margin: 0 !important;">001 분반</span>
-                                    {% elif item.lecture_name and '003' in item.lecture_name %}
-                                        <span class="badge-lecture green" style="margin: 0 !important;">003 분반</span>
-                                    {% endif %}
-                                </div>
-                                <div class="student-meta">
-                                    <span>{{ item.student_id }}</span>
-                                    <span>|</span>
-                                    <span>{{ item.department }}</span>
-                                    <span>|</span>
-                                    <strong>{{ item.assignment_name }}</strong>
+                                     <a href="/admin/roaster/{{ item.lecture_id }}/{{ item.student_id }}"
+                                        style="text-decoration: none;" class="student-name">
+                                        {{ item.student_name }}
+                                     </a>
+                                     {% if item.lecture_name and '001' in item.lecture_name %}
+                                         <span class="badge-lecture blue" style="margin: 0 !important;">001 분반</span>
+                                     {% elif item.lecture_name and '003' in item.lecture_name %}
+                                         <span class="badge-lecture green" style="margin: 0 !important;">003 분반</span>
+                                     {% endif %}
+                                 </div>
+                                 <div class="student-meta">
+                                     <span>{{ item.student_id }}</span>
+                                     <span>|</span>
+                                     <span>{{ item.department }}</span>
+                                     <span>|</span>
+                                     <a href="/admin/roaster/{{ item.lecture_id }}/{{ item.student_id }}/{{ item.assignment_id }}" style="text-decoration: none; color: inherit;"><strong>{{ item.assignment_name }}</strong></a>
                                 </div>
                             </div>
                         </div>
@@ -311,7 +311,7 @@
                                 {% elif item.verdict %} ❓ {% else %} ⏳ {% endif %}
                                 {{ item.verdict or 'PENDING' }}
                             </div>
-                            <div class="time-ago">{{ (item.submitted_at | string)[:16] }}</div>
+                            <div class="time-ago" data-ts="{{ item.submitted_at }}">{{ (item.submitted_at | string)[:16] }}</div>
                             <div style="font-size: 0.8rem; font-weight: 500;">
                                 Score: {{ item.score }}/{{ item.max_score }}
                             </div>
@@ -369,7 +369,7 @@
                             <td>{{ row.lecture_id }}</td>
                             <td>{{ row.aid }}</td>
                             <td><strong>{{ row.name }}</strong></td>
-                            <td style="color: var(--text-secondary);">{{ row.last_fetched_at }}</td>
+                            <td style="color: var(--text-secondary);" data-ts="{{ row.last_fetched_at }}">{{ row.last_fetched_at }}</td>
                             <td class="text-right">{{ row.uniq_students }}</td>
                             <td class="text-right">{{ row.num_submissions }}</td>
                             <td class="text-right" style="color: #16a34a; font-weight: 600;">{{ row.num_correct }}</td>
@@ -384,11 +384,28 @@
 
     <!-- AJAX Fetch Script -->
     <script>
+        function reltime(ts) {
+            const diff = Math.floor((Date.now() - new Date(ts.replace(' ', 'T'))) / 1000);
+            if (diff < 60) return diff + 's ago';
+            if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+            return Math.floor(diff/86400) + 'd ago';
+        }
+
+        // Apply relative time to SSR timestamps on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('[data-ts]').forEach(el => {
+                const small = document.createElement('span');
+                small.style.cssText = 'font-size:0.7rem;opacity:0.6;margin-left:4px;';
+                small.textContent = reltime(el.dataset.ts);
+                el.appendChild(small);
+            });
+        });
+
         function toggleMonitorTable() {
             const container = document.getElementById('monitor-table-container');
             if (container) {
                 container.classList.toggle('collapsed');
-                // Store preference
                 localStorage.setItem('monitorTableCollapsed', container.classList.contains('collapsed'));
             }
         }
@@ -432,7 +449,7 @@
                     <td>${row.lecture_id}</td>
                     <td>${row.aid}</td>
                     <td><strong>${row.name}</strong></td>
-                    <td style="color: var(--text-secondary);">${row.last_fetched_at}</td>
+                    <td style="color: var(--text-secondary);">${row.last_fetched_at} <span style="font-size:0.7rem;opacity:0.6;">${row.last_fetched_at && row.last_fetched_at !== '-' ? reltime(row.last_fetched_at) : ''}</span></td>
                     <td class="text-right">${row.uniq_students}</td>
                     <td class="text-right">${row.num_submissions}</td>
                     <td class="text-right" style="color: #16a34a; font-weight: 600;">${row.num_correct}</td>
@@ -495,17 +512,17 @@
                             <img src="/admin/photo/${item.student_id}" class="student-photo" onerror="this.src='data:image/svg+xml;base64,...'">
                             <div class="student-details">
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <a href="/admin/roaster/${item.lecture_id}/${item.student_id}/${item.assignment_id}" style="text-decoration: none;" class="student-name">
-                                       ${item.student_name}
-                                    </a>
-                                    ${lectureBadge}
-                                </div>
-                                <div class="student-meta">
-                                    <span>${item.student_id}</span>
-                                    <span>|</span>
-                                    <span>${item.department || 'Unknown'}</span>
-                                    <span>|</span>
-                                    <strong>${item.assignment_name}</strong>
+                                     <a href="/admin/roaster/${item.lecture_id}/${item.student_id}" style="text-decoration: none;" class="student-name">
+                                        ${item.student_name}
+                                     </a>
+                                     ${lectureBadge}
+                                 </div>
+                                 <div class="student-meta">
+                                     <span>${item.student_id}</span>
+                                     <span>|</span>
+                                     <span>${item.department || 'Unknown'}</span>
+                                     <span>|</span>
+                                     <a href="/admin/roaster/${item.lecture_id}/${item.student_id}/${item.assignment_id}" style="text-decoration: none; color: inherit;"><strong>${item.assignment_name}</strong></a>
                                 </div>
                             </div>
                         </div>
@@ -514,7 +531,7 @@
                             <div class="badge ${verdictClass}">
                                 ${verdictIcon} ${item.verdict || 'PENDING'}
                             </div>
-                            <div class="time-ago">${item.submitted_at_short || ''}</div>
+                            <div class="time-ago">${item.submitted_at_short || ''} <span style="font-size:0.7rem;opacity:0.6;">${item.submitted_at ? reltime(item.submitted_at) : ''}</span></div>
                             <div style="font-size: 0.8rem; font-weight: 500;">
                                 Score: ${item.score}/${item.max_score}
                             </div>

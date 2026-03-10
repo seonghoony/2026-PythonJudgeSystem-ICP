@@ -135,8 +135,14 @@
         }
 
         .submission-time {
-            color: var(--text-primary);
-            font-weight: 500;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        .rel-time {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            opacity: 0.7;
+            margin-left: 4px;
         }
 
         .submission-meta {
@@ -221,7 +227,7 @@
                             {% endif %}
                             
                             <a href="/admin/roaster/{{ lecture_id }}/{{ student_id }}/{{ group.assignment_id }}" class="submission-item">
-                                <span class="submission-time">{{ sub.submitted_at }}</span>
+                                <span class="submission-time" data-ts="{{ sub.submitted_at }}">{{ (sub.submitted_at | string)[:16] }}</span>
                                 <div class="submission-meta">
                                     <span class="badge {{ verdict_class }}">{{ sub.verdict or 'PENDING' }}</span>
                                     <span class="score-box">{{ sub.score }}/{{ sub.max_score }}</span>
@@ -233,5 +239,21 @@
             {% endfor %}
         {% endif %}
     </div>
+
+    <script>
+    function reltime(ts) {
+        const diff = Math.floor((Date.now() - new Date(ts.replace(' ', 'T'))) / 1000);
+        if (diff < 60) return diff + 's';
+        if (diff < 3600) return Math.floor(diff/60) + 'm';
+        if (diff < 86400) return Math.floor(diff/3600) + 'h';
+        return Math.floor(diff/86400) + 'd';
+    }
+    document.querySelectorAll('[data-ts]').forEach(el => {
+        const ago = document.createElement('span');
+        ago.className = 'rel-time';
+        ago.textContent = '(' + reltime(el.dataset.ts) + ' ago)';
+        el.appendChild(ago);
+    });
+    </script>
 </body>
 </html>

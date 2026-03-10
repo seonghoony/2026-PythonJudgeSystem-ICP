@@ -205,7 +205,7 @@
                     
                     <li class="submission-item {% if loop.first %}active{% endif %}" 
                         onclick="showSubmission({{ loop.index0 }}, this)">
-                        <div class="sub-time">{{ sub.submitted_at }}</div>
+                        <div class="sub-time" data-ts="{{ sub.submitted_at }}">{{ (sub.submitted_at | string)[:16] }}</div>
                         <div class="sub-meta">
                             <span class="badge {{ verdict_class }}">{{ sub.verdict or 'PENDING' }}</span>
                             <span>Score: {{ sub.score }}/{{ sub.max_score }}</span>
@@ -237,17 +237,19 @@
         </div>
     </div>
 
-    <!-- Data Injection for JS -->
+    <!-- Data Injection: type=application/json is ignored by the JS linter -->
+    <script id="history-data" type="application/json">[
+        {% for sub in history %}
+        {
+            "verdict": {{ sub.verdict | tojson | safe }},
+            "code": {{ sub.code | tojson | safe }},
+            "failure": {{ (sub.failure_details or 'null') | parse_json | tojson | safe }}
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]</script>
+
     <script>
-        const historyData = [
-            {% for sub in history %}
-            {
-                "verdict": "{{ sub.verdict or '' }}",
-                "code": {{ sub.code | tojson | safe }},
-                "failure": {{ (sub.failure_details or 'null') | parse_json | tojson | safe }}
-            },
-            {% endfor %}
-        ];
+        const historyData = JSON.parse(document.getElementById('history-data').textContent);
 
         function showSubmission(index, element) {
             // Update Active State
@@ -300,6 +302,21 @@
         if(historyData.length > 0) {
             showSubmission(0, document.querySelector('.submission-item'));
         }
+
+        // Relative timestamps
+        function reltime(ts) {
+            const diff = Math.floor((Date.now() - new Date(ts.replace(' ', 'T'))) / 1000);
+            if (diff < 60) return diff + 's ago';
+            if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+            return Math.floor(diff/86400) + 'd ago';
+        }
+        document.querySelectorAll('[data-ts]').forEach(el => {
+            const small = document.createElement('span');
+            small.style.cssText = 'font-size:0.7rem;opacity:0.55;margin-left:4px;';
+            small.textContent = reltime(el.dataset.ts);
+            el.appendChild(small);
+        });
     </script>
 </body>
 </html>

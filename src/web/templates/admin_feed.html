@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Feed - Python Judge Admin</title>
+    
+    <style>
+        :root {
+            --bg-color: #f1f5f9;
+            --surface-color: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
+            --header-bg: #1e293b;
+            --header-text: #ffffff;
+            --code-bg: #f8fafc;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+        }
+
+        nav {
+            background-color: var(--header-bg);
+            color: var(--header-text);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        nav h1 { margin: 0; font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 8px;}
+        .live-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #22c55e;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            margin-bottom: 280px; /* Leave space for the fixed monitor table */
+        }
+
+        .feed-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .feed-item {
+            background: var(--surface-color);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            padding: 1.25rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            transition: transform 0.1s;
+        }
+        
+        .feed-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+
+        .feed-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }
+
+        .student-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .student-photo {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--border-color);
+        }
+        
+        .student-details {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .student-name { font-weight: 600; font-size: 1.05rem; color: var(--text-primary); }
+        .student-meta { font-size: 0.85rem; color: var(--text-secondary); }
+        .student-meta span { margin-right: 8px; }
+
+        .submission-meta {
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            text-transform: uppercase;
+        }
+        
+        .badge-ac { background: #dcfce7; color: #166534; }
+        .badge-wa { background: #fee2e2; color: #991b1b; }
+        .badge-rte { background: #fef9c3; color: #854d0e; }
+        .badge-sys { background: #f3f4f6; color: #374151; }
+        .badge-pending { background: #e0f2fe; color: #0369a1; }
+
+        .badge-lecture {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.75rem;
+            margin-right: 6px !important;
+        }
+        .badge-lecture.blue { background-color: #dbeafe; color: #1e3a8a; }
+        .badge-lecture.green { background-color: #dcfce7; color: #14532d; }
+
+        .time-ago { font-size: 0.8rem; color: var(--text-secondary); }
+
+        /* Monitor Table Styles */
+        .monitor-table-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            margin: 0;
+            background: var(--surface-color);
+            border-top: 1px solid var(--border-color);
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
+            z-index: 1000;
+            max-height: 250px;
+            display: flex;
+            flex-direction: column;
+        }
+        .monitor-table-header {
+            padding: 0.75rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            background: #f8fafc;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+        .monitor-table-header:hover {
+            background: #f1f5f9;
+        }
+        .monitor-table-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .monitor-table-toggle {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            transition: transform 0.2s;
+        }
+        .monitor-table-container.collapsed .monitor-table-body {
+            display: none;
+        }
+        .monitor-table-container.collapsed .monitor-table-toggle {
+            transform: rotate(-180deg);
+        }
+        .monitor-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .monitor-table th, .monitor-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
+        .monitor-table th {
+            background-color: #f1f5f9;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        .monitor-table td {
+            color: var(--text-primary);
+        }
+        .monitor-table tr:last-child td {
+            border-bottom: none;
+        }
+        .monitor-table .text-right { text-align: right; }
+        .monitor-table .text-center { text-align: center; }
+
+        .error-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .error-pane {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .error-pane-header {
+            padding: 6px 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .error-pane:first-child .error-pane-header { background: #f0fdf4; color: #14532d; }
+        .error-pane:first-child pre { color: #14532d; }
+        
+        .error-pane:last-child { border-left: 1px solid var(--border-color); }
+        .error-pane:last-child .error-pane-header { background: #fef2f2; color: #7f1d1d; }
+        .error-pane:last-child pre { color: #7f1d1d; }
+
+        pre {
+            margin: 0;
+            padding: 12px;
+            font-family: 'JetBrains Mono', Consolas, monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h1><span class="live-indicator"></span> PythonJudgeSystem: Live feed</h1>
+        <div style="display: flex; gap: 1rem;">
+            {% for lec in lectures %}
+                <a href="/admin/roaster/{{ lec.id }}" style="color: var(--header-text); text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; background: rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">{{ lec.name }}</a>
+            {% endfor %}
+        </div>
+    </nav>
+    <div class="container">
+        <!-- Add ID to feed list -->
+        <div class="feed-list" id="feed-list-container">
+            {% for item in feed %}
+                {% set verdict_class = 'badge-pending' %}
+                {% if item.verdict == 'AC' %} {% set verdict_class = 'badge-ac' %}
+                {% elif item.verdict == 'WA' %} {% set verdict_class = 'badge-wa' %}
+                {% elif item.verdict == 'RTE' %} {% set verdict_class = 'badge-rte' %}
+                {% elif item.verdict %} {% set verdict_class = 'badge-sys' %} {% endif %}
+                
+                <div class="feed-item">
+                    <div class="feed-header">
+                        <div class="student-info">
+                            <img src="/admin/photo/{{ item.student_id }}" class="student-photo"
+                                 onerror="this.src='data:image/svg+xml;base64,...'">
+                            <div class="student-details">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <a href="/admin/roaster/{{ item.lecture_id }}/{{ item.student_id }}/{{ item.assignment_id }}" 
+                                       style="text-decoration: none;" class="student-name">
+                                       {{ item.student_name }}
+                                    </a>
+                                    {% if item.lecture_name and '001' in item.lecture_name %}
+                                        <span class="badge-lecture blue" style="margin: 0 !important;">001 분반</span>
+                                    {% elif item.lecture_name and '003' in item.lecture_name %}
+                                        <span class="badge-lecture green" style="margin: 0 !important;">003 분반</span>
+                                    {% endif %}
+                                </div>
+                                <div class="student-meta">
+                                    <span>{{ item.student_id }}</span>
+                                    <span>|</span>
+                                    <span>{{ item.department }}</span>
+                                    <span>|</span>
+                                    <strong>{{ item.assignment_name }}</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="submission-meta">
+                            <div class="badge {{ verdict_class }}">
+                                {% if item.verdict == 'AC' %} ✅
+                                {% elif item.verdict == 'WA' %} ❌
+                                {% elif item.verdict == 'RTE' %} ⚠️
+                                {% elif item.verdict %} ❓ {% else %} ⏳ {% endif %}
+                                {{ item.verdict or 'PENDING' }}
+                            </div>
+                            <div class="time-ago">{{ (item.submitted_at | string)[:16] }}</div>
+                            <div style="font-size: 0.8rem; font-weight: 500;">
+                                Score: {{ item.score }}/{{ item.max_score }}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {% if item.verdict and item.verdict != 'AC' and item.failure_details %}
+                        {% set failure = item.failure_details | parse_json %}
+                        {% if failure %}
+                            <div class="error-details">
+                                <div class="error-pane">
+                                    <div class="error-pane-header">Expected Output</div>
+                                    <pre>{{ failure.expected_output or 'N/A' }}</pre>
+                                </div>
+                                <div class="error-pane">
+                                    <div class="error-pane-header">Actual Output (Stdout) / Traceback</div>
+                                    <pre>{% if failure.traceback %}{{ failure.traceback }}{% else %}{{ failure.actual_output or 'N/A' }}{% endif %}</pre>
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            {% else %}
+                <div style="text-align: center; padding: 4rem; color: var(--text-secondary);">
+                    No submissions found yet. Wait for a student to submit their code.
+                </div>
+            {% endfor %}
+        </div>
+
+        {% if monitor_table %}
+        <!-- Add collapsed tracking -->
+        <div class="monitor-table-container" id="monitor-table-container">
+            <!-- Add onclick -->
+            <div class="monitor-table-header" onclick="toggleMonitorTable()">
+                <h2>Monitored Assignments</h2>
+                <div class="monitor-table-toggle">▼</div>
+            </div>
+            <!-- Wrap table in body -->
+            <div class="monitor-table-body" style="overflow-y: auto; flex-grow: 1;">
+                <table class="monitor-table">
+                    <thead>
+                        <tr>
+                            <th>Lecture</th>
+                            <th>Assgn ID</th>
+                            <th>Name</th>
+                            <th>Last Fetch</th>
+                            <th class="text-right">Uniq Students</th>
+                            <th class="text-right">Submissions</th>
+                            <th class="text-right" style="color: #16a34a;">AC Count</th>
+                        </tr>
+                    </thead>
+                    <tbody id="monitor-table-tbody">
+                        {% for row in monitor_table %}
+                        <tr>
+                            <td>{{ row.lecture_id }}</td>
+                            <td>{{ row.aid }}</td>
+                            <td><strong>{{ row.name }}</strong></td>
+                            <td style="color: var(--text-secondary);">{{ row.last_fetched_at }}</td>
+                            <td class="text-right">{{ row.uniq_students }}</td>
+                            <td class="text-right">{{ row.num_submissions }}</td>
+                            <td class="text-right" style="color: #16a34a; font-weight: 600;">{{ row.num_correct }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- AJAX Fetch Script -->
+    <script>
+        function toggleMonitorTable() {
+            const container = document.getElementById('monitor-table-container');
+            if (container) {
+                container.classList.toggle('collapsed');
+                // Store preference
+                localStorage.setItem('monitorTableCollapsed', container.classList.contains('collapsed'));
+            }
+        }
+
+        // Restore preference on load
+        document.addEventListener('DOMContentLoaded', () => {
+            if (localStorage.getItem('monitorTableCollapsed') === 'true') {
+                const container = document.getElementById('monitor-table-container');
+                if (container) container.classList.add('collapsed');
+            }
+        });
+
+        function fetchFeedData() {
+            fetch('/admin/api/feed')
+                .then(response => {
+                    if (!response.ok) {
+                        if(response.status === 401) {
+                            window.location.reload(); // Force browser prompt if session lost
+                        }
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    updateMonitorTable(data.monitor_table);
+                    updateFeedList(data.feed);
+                })
+                .catch(error => {
+                    console.error('Error fetching feed data:', error);
+                });
+        }
+
+        function updateMonitorTable(tableData) {
+            const tbody = document.getElementById('monitor-table-tbody');
+            if (!tbody || !tableData) return;
+            
+            tbody.innerHTML = '';
+            tableData.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.lecture_id}</td>
+                    <td>${row.aid}</td>
+                    <td><strong>${row.name}</strong></td>
+                    <td style="color: var(--text-secondary);">${row.last_fetched_at}</td>
+                    <td class="text-right">${row.uniq_students}</td>
+                    <td class="text-right">${row.num_submissions}</td>
+                    <td class="text-right" style="color: #16a34a; font-weight: 600;">${row.num_correct}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateFeedList(feedData) {
+            const container = document.getElementById('feed-list-container');
+            if (!container || !feedData) return;
+
+            if (feedData.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 4rem; color: var(--text-secondary);">No submissions found yet. Wait for a student to submit their code.</div>';
+                return;
+            }
+
+            // Create new DOM elements to replace existing ones seamlessly
+            container.innerHTML = '';
+            feedData.forEach(item => {
+                let verdictClass = 'badge-pending';
+                let verdictIcon = '⏳';
+                
+                if (item.verdict === 'AC') { verdictClass = 'badge-ac'; verdictIcon = '✅'; }
+                else if (item.verdict === 'WA') { verdictClass = 'badge-wa'; verdictIcon = '❌'; }
+                else if (item.verdict === 'RTE') { verdictClass = 'badge-rte'; verdictIcon = '⚠️'; }
+                else if (item.verdict) { verdictClass = 'badge-sys'; verdictIcon = '❓'; }
+                
+                let lectureBadge = '';
+                if (item.lecture_name) {
+                    if (item.lecture_name.includes('001')) {
+                        lectureBadge = `<span class="badge-lecture blue" style="margin: 0 !important;">001 분반</span>`;
+                    } else if (item.lecture_name.includes('003')) {
+                        lectureBadge = `<span class="badge-lecture green" style="margin: 0 !important;">003 분반</span>`;
+                    }
+                }
+
+                let errorHtml = '';
+                // Since JavaScript handles logical truthiness identically to Jinja
+                if (item.verdict && item.verdict !== 'AC' && item.failure_parsed) {
+                    const fail = item.failure_parsed;
+                    errorHtml = `
+                    <div class="error-details">
+                        <div class="error-pane">
+                            <div class="error-pane-header">Expected Output</div>
+                            <pre>${fail.expected_output || 'N/A'}</pre>
+                        </div>
+                        <div class="error-pane">
+                            <div class="error-pane-header">Actual Output (Stdout) / Traceback</div>
+                            <pre>${fail.traceback ? fail.traceback : (fail.actual_output || 'N/A')}</pre>
+                        </div>
+                    </div>`;
+                }
+
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'feed-item';
+                itemDiv.innerHTML = `
+                    <div class="feed-header">
+                        <div class="student-info">
+                            <img src="/admin/photo/${item.student_id}" class="student-photo" onerror="this.src='data:image/svg+xml;base64,...'">
+                            <div class="student-details">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <a href="/admin/roaster/${item.lecture_id}/${item.student_id}/${item.assignment_id}" style="text-decoration: none;" class="student-name">
+                                       ${item.student_name}
+                                    </a>
+                                    ${lectureBadge}
+                                </div>
+                                <div class="student-meta">
+                                    <span>${item.student_id}</span>
+                                    <span>|</span>
+                                    <span>${item.department || 'Unknown'}</span>
+                                    <span>|</span>
+                                    <strong>${item.assignment_name}</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="submission-meta">
+                            <div class="badge ${verdictClass}">
+                                ${verdictIcon} ${item.verdict || 'PENDING'}
+                            </div>
+                            <div class="time-ago">${item.submitted_at_short || ''}</div>
+                            <div style="font-size: 0.8rem; font-weight: 500;">
+                                Score: ${item.score}/${item.max_score}
+                            </div>
+                        </div>
+                    </div>
+                    ${errorHtml}
+                `;
+                container.appendChild(itemDiv);
+            });
+        }
+
+        // Poll every 10 seconds
+        setInterval(fetchFeedData, 10000);
+    </script>
+</body>
+</html>

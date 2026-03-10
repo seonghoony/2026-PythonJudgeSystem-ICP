@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ student_name }}'s Submissions - {{ lecture_name }}</title>
+    
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --bg-color: #f8fafc;
+            --surface-color: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+        }
+
+        nav {
+            background-color: var(--surface-color);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-brand {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .back-btn {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .back-btn:hover { color: var(--primary-color); }
+
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .student-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 2rem;
+            padding: 2rem;
+            background: var(--surface-color);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+        }
+
+        .student-photo {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            background-color: #f1f5f9;
+            border: 2px solid var(--border-color);
+        }
+
+        .student-info h1 {
+            margin: 0 0 8px 0;
+            font-size: 1.5rem;
+        }
+
+        .student-meta {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .assignment-group {
+            background: var(--surface-color);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .assignment-header {
+            background: #f8fafc;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            font-size: 1.1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .submission-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .submission-item {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-decoration: none;
+            color: inherit;
+            transition: background-color 0.15s;
+        }
+
+        .submission-item:last-child {
+            border-bottom: none;
+        }
+
+        .submission-item:hover {
+            background-color: #f1f5f9;
+        }
+
+        .submission-time {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .submission-meta {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .badge-ac { background-color: #dcfce7; color: #166534; }
+        .badge-wa { background-color: #fee2e2; color: #991b1b; }
+        .badge-rte { background-color: #ffedd5; color: #9a3412; }
+        .badge-sys { background-color: #f3f4f6; color: #374151; }
+
+        .score-box {
+            font-family: monospace;
+            font-size: 1rem;
+            color: var(--text-secondary);
+            width: 80px;
+            text-align: right;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-secondary);
+            background: var(--surface-color);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/admin/roaster/{{ lecture_id }}" class="back-btn">
+            ← Back to Roster
+        </a>
+        <div class="nav-brand">
+            {{ lecture_name }} - {{ student_name }}
+        </div>
+        <div style="width: 100px;"></div>
+    </nav>
+
+    <div class="container">
+        <div class="student-header">
+            <img src="/admin/photo/{{ student_id }}" alt="Photo" class="student-photo" onerror="this.src='data:image/svg+xml;base64,...'">
+            <div class="student-info">
+                <h1>{{ student_name }}</h1>
+                <div class="student-meta">
+                    Student ID: {{ student_id }}
+                </div>
+            </div>
+        </div>
+
+        {% if not grouped_assignments %}
+            <div class="empty-state">
+                <h3>No submissions found</h3>
+                <p>This student has not submitted any code yet.</p>
+            </div>
+        {% else %}
+            {% for group in grouped_assignments %}
+                <div class="assignment-group">
+                    <div class="assignment-header">
+                        <span>{{ group.assignment_name }}</span>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem; font-weight: normal;">
+                            {{ group.submissions|length }} submisson(s)
+                        </span>
+                    </div>
+                    
+                    <ul class="submission-list">
+                        {% for sub in group.submissions %}
+                            {% set verdict_class = 'badge-sys' %}
+                            {% if sub.verdict == 'AC' %} {% set verdict_class = 'badge-ac' %}
+                            {% elif sub.verdict == 'WA' %} {% set verdict_class = 'badge-wa' %}
+                            {% elif sub.verdict == 'RTE' %} {% set verdict_class = 'badge-rte' %}
+                            {% endif %}
+                            
+                            <a href="/admin/roaster/{{ lecture_id }}/{{ student_id }}/{{ group.assignment_id }}" class="submission-item">
+                                <span class="submission-time">{{ sub.submitted_at }}</span>
+                                <div class="submission-meta">
+                                    <span class="badge {{ verdict_class }}">{{ sub.verdict or 'PENDING' }}</span>
+                                    <span class="score-box">{{ sub.score }}/{{ sub.max_score }}</span>
+                                </div>
+                            </a>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - {{ lecture_name }}</title>
+    <style>
+        :root {
+            --bg-color: #f4f6f8;
+            --surface-color: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+            --primary-color: #3b82f6;
+            --success-color: #22c55e;
+            --error-color: #ef4444;
+            --header-bg: #1e293b;
+            --header-text: #ffffff;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+        }
+
+        nav {
+            background-color: var(--header-bg);
+            color: var(--header-text);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        nav h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        nav a {
+            color: var(--header-text);
+            text-decoration: none;
+            font-size: 0.875rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+        
+        nav a:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .table-container {
+            background-color: var(--surface-color);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        th, td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #f8fafc;
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            font-size: 0.95rem;
+        }
+
+        tbody tr:hover {
+            background-color: #f1f5f9;
+        }
+
+        .student-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .student-photo {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--border-color);
+        }
+
+        .student-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .student-id {
+            font-weight: normal;
+            color: var(--text-secondary);
+        }
+
+        .student-name {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .assignment-summary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.1s, filter 0.2s;
+        }
+
+        .assignment-summary:hover {
+            transform: scale(1.05);
+            filter: brightness(0.95);
+        }
+
+        .status-ac {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+        
+        .status-fail {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-none {
+            background-color: #f1f5f9;
+            color: #94a3b8;
+            cursor: default;
+        }
+        
+        .status-none:hover {
+            transform: none;
+            filter: none;
+        }
+
+    </style>
+</head>
+<body>
+    <nav>
+        <h1>{{ lecture_name }} - Roster & Progress</h1>
+        <a href="/admin/feed">Global Real-time Feed &rarr;</a>
+    </nav>
+    <div class="container">
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Student</th>
+                        <th>Department</th>
+                        {% for a in assignments %}
+                            <th title="{{ a.name }}">{{ a.name.split('—')[0].strip() }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for student in students %}
+                    <tr>
+                        <td>
+                            <div class="student-cell">
+                                <img src="/admin/photo/{{ student.student_id }}" alt="Photo" class="student-photo" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjbHh4eCI+PHBhdGggZD0iTTEyIDJDMiAxMiA2IDIyIDYgMjJTMTAgMjQgMTIgMjRTMTggMjIgMTggMjJTMjIgMTIgMTIgMlptMCA4YzEuNjUgMCAzIDEuMzUgMyAzczEzIDMtMyAzdS0zLTMtMS4zNS0zLTN6Ii8+PC9zdmc+'" />
+                                <div class="student-info">
+                                    <span class="student-id">{{ student.student_id }}</span>
+                                    <a href="/admin/roaster/{{ lecture_id }}/{{ student.student_id }}" class="student-name" style="text-decoration: none; color: var(--primary-color);">
+                                        {{ student.name }}
+                                    </a>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="color: var(--text-secondary); font-size: 0.85rem;">{{ student.department }}</td>
+                        
+                        {% for a in student.assignments %}
+                            <td>
+                                {% if a.attempts > 0 %}
+                                    <a href="/admin/roaster/{{ lecture_id }}/{{ student.student_id }}/{{ a.assignment_id }}" 
+                                       class="assignment-summary {% if a.verdict == 'AC' %}status-ac{% else %}status-fail{% endif %}">
+                                        {% if a.verdict == 'AC' %}✅{% else %}❌{% endif %} {{ a.attempts }}
+                                    </a>
+                                {% else %}
+                                    <span class="assignment-summary status-none">-</span>
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="100%" style="text-align: center; padding: 3rem;">No students found for this lecture.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

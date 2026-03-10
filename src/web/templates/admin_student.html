@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - {{ student_name }}'s {{ assignment_name }}</title>
+    <!-- Highlight.js for Code Formatting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/python.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --surface-color: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
+            --header-bg: #1e293b;
+            --header-text: #ffffff;
+            --code-bg: #f1f5f9;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        nav {
+            background-color: var(--header-bg);
+            color: var(--header-text);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-shrink: 0;
+        }
+
+        nav a.back-btn {
+            color: #cbd5e1;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        nav a.back-btn:hover { background: rgba(255,255,255,0.1); }
+
+        nav h1 { margin: 0; font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 8px;}
+        nav h1 img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover;}
+
+        /* Main Workspace container */
+        .workspace {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            padding: 1rem;
+            gap: 1rem;
+        }
+
+        /* Submissions List Panel */
+        .history-panel {
+            width: 300px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .panel-header {
+            padding: 12px 16px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+            background: #f8fafc;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            letter-spacing: 0.05em;
+        }
+
+        .submission-list {
+            overflow-y: auto;
+            flex: 1;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .submission-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .submission-item:hover { background: #f1f5f9; }
+        .submission-item.active { background: #e0f2fe; border-left: 3px solid #0284c7; }
+
+        .sub-time { font-size: 0.85rem; font-weight: 500; color: var(--text-primary); margin-bottom: 4px;}
+        .sub-meta { font-size: 0.75rem; color: var(--text-secondary); display: flex; justify-content: space-between;}
+        
+        .badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.7rem;
+        }
+        .badge-ac { background: #dcfce7; color: #166534; }
+        .badge-none { background: #f1f5f9; color: #475569; }
+        .badge-fail { background: #fee2e2; color: #991b1b; }
+
+        /* Detail Panel (Code + Output) */
+        .detail-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow: hidden;
+        }
+
+        .code-container, .output-container {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .code-container { flex: 3; } /* Taller for code */
+        .output-container { flex: 2; display: flex; flex-direction: column; } /* Shorter for output */
+
+        .output-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .output-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border-color);
+        }
+        .output-pane:last-child { border-right: none; }
+
+        .pane-header {
+            padding: 8px 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            background: #f8fafc;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        pre {
+            margin: 0;
+            padding: 12px;
+            overflow: auto;
+            flex: 1;
+            font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            background: var(--code-bg);
+        }
+        
+        /* Expected output color overrides to easily distinguish */
+        #expected-output { background-color: #f0fdf4; color: #14532d; }
+        #actual-output { background-color: #fef2f2; color: #7f1d1d; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/admin/roaster/{{ lecture_id }}/{{ student_id }}" class="back-btn">
+            &larr; Back to Summary
+        </a>
+        <h1>
+            <img src="/admin/photo/{{ student_id }}" onerror="this.src='data:image/svg+xml;base64,...'"> 
+            {{ student_name }}'s {{ assignment_name }}
+        </h1>
+    </nav>
+
+    <div class="workspace">
+        <div class="history-panel">
+            <div class="panel-header">Submission History ({{ history|length }})</div>
+            <ul class="submission-list">
+                {% for sub in history %}
+                    {% set verdict_class = 'badge-none' %}
+                    {% if sub.verdict == 'AC' %} {% set verdict_class = 'badge-ac' %}
+                    {% elif sub.verdict %} {% set verdict_class = 'badge-fail' %} {% endif %}
+                    
+                    <li class="submission-item {% if loop.first %}active{% endif %}" 
+                        onclick="showSubmission({{ loop.index0 }}, this)">
+                        <div class="sub-time">{{ sub.submitted_at }}</div>
+                        <div class="sub-meta">
+                            <span class="badge {{ verdict_class }}">{{ sub.verdict or 'PENDING' }}</span>
+                            <span>Score: {{ sub.score }}/{{ sub.max_score }}</span>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="detail-panel">
+            <div class="code-container">
+                <div class="panel-header">Submitted Code</div>
+                <pre><code id="code-viewer" class="language-python">Select a submission to view code...</code></pre>
+            </div>
+
+            <div class="output-container">
+                <div class="panel-header" id="output-title">Execution Result</div>
+                <div class="output-body">
+                    <div class="output-pane">
+                        <div class="pane-header">Expected Output</div>
+                        <pre id="expected-output">...</pre>
+                    </div>
+                    <div class="output-pane">
+                        <div class="pane-header">Actual Output (Stdout)</div>
+                        <pre id="actual-output">...</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Injection for JS -->
+    <script>
+        const historyData = [
+            {% for sub in history %}
+            {
+                "verdict": "{{ sub.verdict or '' }}",
+                "code": {{ sub.code | tojson | safe }},
+                "failure": {{ (sub.failure_details or 'null') | parse_json | tojson | safe }}
+            },
+            {% endfor %}
+        ];
+
+        function showSubmission(index, element) {
+            // Update Active State
+            document.querySelectorAll('.submission-item').forEach(el => el.classList.remove('active'));
+            if(element) element.classList.add('active');
+
+            const data = historyData[index];
+            if(!data) return;
+
+            // Render Code
+            const codeViewer = document.getElementById('code-viewer');
+            codeViewer.textContent = data.code;
+            codeViewer.removeAttribute('data-highlighted'); // Force re-highlight
+            hljs.highlightElement(codeViewer);
+
+            // Render Output
+            const expectedBox = document.getElementById('expected-output');
+            const actualBox = document.getElementById('actual-output');
+            const outputTitle = document.getElementById('output-title');
+
+            if (data.verdict === 'AC') {
+                expectedBox.textContent = "Accepted / No Error Details Recorded";
+                actualBox.textContent = "Accepted / No Error Details Recorded";
+                
+                expectedBox.style.backgroundColor = '#f1f5f9';
+                expectedBox.style.color = '#475569';
+                actualBox.style.backgroundColor = '#f1f5f9';
+                actualBox.style.color = '#475569';
+            } else if (data.failure) {
+                // If it's WA or another Error with structured details
+                expectedBox.textContent = data.failure.expected_output || 'N/A';
+                if(data.failure.traceback) {
+                    actualBox.textContent = data.failure.traceback;
+                } else {
+                    actualBox.textContent = data.failure.actual_output || 'N/A';
+                }
+                
+                // Reset to error colors
+                expectedBox.style.backgroundColor = '#f0fdf4';
+                expectedBox.style.color = '#14532d';
+                actualBox.style.backgroundColor = '#fef2f2';
+                actualBox.style.color = '#7f1d1d';
+            } else {
+                expectedBox.textContent = "Processing / No Error Information";
+                actualBox.textContent = "Processing / No Error Information";
+            }
+        }
+
+        // Initialize first
+        if(historyData.length > 0) {
+            showSubmission(0, document.querySelector('.submission-item'));
+        }
+    </script>
+</body>
+</html>

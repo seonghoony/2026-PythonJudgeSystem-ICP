@@ -336,3 +336,162 @@ def get_cdf_data(assignment_id: int) -> list[dict]:
     """
     rows = execute_query(sql, (assignment_id,), fetch=True)
     return rows
+
+# --- Admin Dashboard Support ---
+
+def get_admin_lecture_students(lecture_id: int) -> List[Dict]:
+    """
+    Fetch all students in a lecture, along with their assignment summary.
+    Summary is a list of dicts: {'assignment_id': int, 'name': str, 'verdict': str, 'attempts': int}
+    """
+    # 1. Get enrolled students
+    sql_students = """
+    SELECT s.student_id, s.name, s.department
+    FROM students s
+    JOIN enrollments e ON s.student_id = e.student_id
+    WHERE e.lecture_id = %s
+    ORDER BY s.student_id
+    """
+    students = execute_query(sql_students, (lecture_id,), fetch=True) or []
+    
+    # 2. Get assignments for this lecture
+    sql_assignments = """
+    SELECT id as assignment_id, name
+    FROM assignments 
+    WHERE lecture_id = %s 
+    ORDER BY id ASC
+    """
+    assignments = execute_query(sql_assignments, (lecture_id,), fetch=True) or []
+    
+    # 3. Get all latest submissions for these students + assignments
+    sql_submissions = """
+    SELECT s.student_id, s.assignment_id, s.verdict, 
+           (SELECT COUNT(*) FROM submissions sub 
+            WHERE sub.assignment_id = s.assignment_id AND sub.student_id = s.student_id) as attempts
+    FROM submissions s
+    JOIN assignments a ON s.assignment_id = a.id
+    WHERE a.lecture_id = %s AND s.is_latest = 1
+    """
+    subs = execute_query(sql_submissions, (lecture_id,), fetch=True) or []
+    
+    # Group submissions by student_id
+    sub_map = {}
+    for sub in subs:
+        if sub['student_id'] not in sub_map:
+            sub_map[sub['student_id']] = {}
+        sub_map[sub['student_id']][sub['assignment_id']] = sub
+        
+    # Build final result map
+    for student in students:
+        sid = student['student_id']
+        student['assignments'] = []
+        for a in assignments:
+            aid = a['assignment_id']
+            student_sub = sub_map.get(sid, {}).get(aid, None)
+            
+            if student_sub:
+                student['assignments'].append({
+                    'assignment_id': aid,
+                    'name': a['name'],
+                    'verdict': student_sub['verdict'],
+                    'attempts': student_sub['attempts']
+                })
+            else:
+                 student['assignments'].append({
+                    'assignment_id': aid,
+                    'name': a['name'],
+                    'verdict': None,
+                    'attempts': 0
+                })
+                
+    return students
+
+def get_student_submission_history(assignment_id: int, student_id: str) -> List[Dict]:
+    """
+    Fetch all attempts for a specific student and assignment, including code and output details.
+    """
+    sql = """
+    SELECT s.id, s.submitted_at, s.score, s.max_score, s.verdict, s.failure_details, f.content as code
+    FROM submissions s
+    JOIN files f ON s.file_md5 = f.md5
+    WHERE s.assignment_id = %s AND s.student_id = %s
+    ORDER BY s.submitted_at DESC
+    """
+    rows = execute_query(sql, (assignment_id, student_id), fetch=True) or []
+    
+    # Decode MEDIUMBLOB / JSON fields to string
+    for r in rows:
+        if isinstance(r.get('code'), (bytes, bytearray)):
+            try:
+                r['code'] = r['code'].decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    r['code'] = r['code'].decode('euc-kr')
+                except Exception:
+                    r['code'] = "<Binary Data or Decode Error>"
+        elif r.get('code') is not None:
+            r['code'] = str(r['code'])
+            
+        if isinstance(r.get('failure_details'), (bytes, bytearray)):
+            r['failure_details'] = r['failure_details'].decode('utf-8')
+            
+    return rows
+
+def get_student_photo(student_id: str) -> Optional[bytes]:
+    """Fetch the raw MEDIUMBLOB photo for a student."""
+    sql = "SELECT photo FROM students WHERE student_id = %s"
+    rows = execute_query(sql, (student_id,), fetch=True)
+    if rows and rows[0]['photo']:
+        return rows[0]['photo']
+    return None
+
+def get_student_all_submissions(student_id: str, lecture_id: int) -> List[Dict]:
+    """
+    Fetch all attempts for a specific student across all assignments in a lecture.
+    Used for the Student Summary page.
+    """
+    sql = """
+    SELECT 
+        s.id, s.assignment_id, a.name as assignment_name, s.submitted_at, 
+        s.score, s.max_score, s.verdict, s.failure_details, f.content as code
+    FROM submissions s
+    JOIN assignments a ON s.assignment_id = a.id
+    JOIN files f ON s.file_md5 = f.md5
+    WHERE s.student_id = %s AND a.lecture_id = %s
+    ORDER BY s.assignment_id DESC, s.submitted_at DESC
+    """
+    rows = execute_query(sql, (student_id, lecture_id), fetch=True) or []
+    
+    # Decode MEDIUMBLOB / JSON fields to string
+    for r in rows:
+        if isinstance(r.get('code'), (bytes, bytearray)):
+            try:
+                r['code'] = r['code'].decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    r['code'] = r['code'].decode('euc-kr')
+                except Exception:
+                    r['code'] = "<Binary Data or Decode Error>"
+        elif r.get('code') is not None:
+            r['code'] = str(r['code'])
+            
+        if isinstance(r.get('failure_details'), (bytes, bytearray)):
+            r['failure_details'] = r['failure_details'].decode('utf-8')
+            
+    return rows
+
+def get_global_feed(limit: int = 50) -> List[Dict]:
+    """Fetch latest submissions across all assignments globally."""
+    sql = """
+    SELECT 
+        s.id, s.student_id, st.name as student_name, st.department,
+        a.name as assignment_name, a.lecture_id, l.name as lecture_name, s.assignment_id,
+        s.submitted_at, s.score, s.max_score, s.verdict, s.failure_details
+    FROM submissions s
+    JOIN students st ON s.student_id = st.student_id
+    JOIN assignments a ON s.assignment_id = a.id
+    JOIN lectures l ON a.lecture_id = l.id
+    ORDER BY s.submitted_at DESC
+    LIMIT %s
+    """
+    return execute_query(sql, (limit,), fetch=True) or []

@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Optional, List, Dict
 from dotenv import load_dotenv
 
+import concurrent.futures
+import os
+GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 4) - 2))
+GRADING_QUEUE = set()
+
 # Load Env
 load_dotenv()
 
@@ -96,7 +101,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
     df_assign = sb.list_assignments(str(lecture_id))
     if df_assign.empty:
         logger.warning("No assignments found.")
-        return
+        return {}, {}
 
     db.ensure_lecture(lecture_id, f"Lecture {lecture_id}")
     
@@ -286,179 +291,188 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
     logger.info(f"Found {total} submissions to grade for {assignment_id} (Force: {force}).")
     
     count = 0
-    for i, sub in enumerate(submissions):
-        sid = sub['id'] # submission ID from DB
-        student_id = sub['student_id'] # student ID
-        md5 = sub['file_md5']
-        
-        # Override Grade URL if fresh
-        grade_url = None
-        if url_map and student_id in url_map:
-            grade_url = url_map[student_id]
-            
-        # Get Max Score from sub (default 100.0)
-        max_score = float(sub.get('max_score', 100.0))
+    def process_submission(i, sub):
+            sid = sub['id'] # submission ID from DB
+            student_id = sub['student_id'] # student ID
+            md5 = sub['file_md5']
+    
+            # Override Grade URL if fresh
+            grade_url = None
+            if url_map and student_id in url_map:
+                grade_url = url_map[student_id]
+    
+            # Get Max Score from sub (default 100.0)
+            max_score = float(sub.get('max_score', 100.0))
+    
+            student_info = db.get_student_info(student_id)
+            if student_info and student_info.get('name') and student_info.get('department'):
+                student_str = f"{student_id} ({student_info['name']}, {student_info['department']})"
+            elif student_info and student_info.get('name'):
+                student_str = f"{student_id} ({student_info['name']})"
+            else:
+                student_str = str(student_id)
+    
+            logger.info(f"Grading #{i+1}/{total} (Submission ID: {sid}, Student ID: {student_str}, Max: {max_score})...")
+    
+            try:
+                content = db.get_file_content(md5)
+    
+                # --- Inline File Validation (pre-evaluation) ---
+                is_valid, validation_error = validate_submission(content)
+                if not is_valid:
+                    attempt_count = db.get_submission_count(int(assignment_id), student_id)
+                    comment = f"{attempt_count}번째 시도. {validation_error}"
+                    logger.info(f"  -> WA (Validation Failed: {validation_error}) {'[DRY RUN]' if dry_run else ''}")
+                    if not dry_run:
+                        db.update_submission_result(sid, 0.0, "WA", comment)
+    
+                        # Upload to Snowboard
+                        if sb and grade_url:
+                            try:
+                                sb.submit_score(grade_url, 0.0, comment)
+                            except Exception as e:
+                                logger.error(f"  Upload Error: {e}")
+                                push(f"Snowboard 업로드 오류: {e}")
+                    return
 
-        student_info = db.get_student_info(student_id)
-        if student_info and student_info.get('name') and student_info.get('department'):
-            student_str = f"{student_id} ({student_info['name']}, {student_info['department']})"
-        elif student_info and student_info.get('name'):
-            student_str = f"{student_id} ({student_info['name']})"
-        else:
-            student_str = str(student_id)
-
-        logger.info(f"Grading #{i+1}/{total} (Submission ID: {sid}, Student ID: {student_str}, Max: {max_score})...")
-        
-        try:
-            content = db.get_file_content(md5)
-            
-            # --- Inline File Validation (pre-evaluation) ---
-            is_valid, validation_error = validate_submission(content)
-            if not is_valid:
-                attempt_count = db.get_submission_count(int(assignment_id), student_id)
-                comment = f"{attempt_count}번째 시도. {validation_error}"
-                logger.info(f"  -> WA (Validation Failed: {validation_error}) {'[DRY RUN]' if dry_run else ''}")
-                if not dry_run:
-                    db.update_submission_result(sid, 0.0, "WA", comment)
-                    
-                    # Upload to Snowboard
-                    if sb and grade_url:
-                        try:
-                            sb.submit_score(grade_url, 0.0, comment)
-                        except Exception as e:
-                            logger.error(f"  Upload Error: {e}")
-                            push(f"Snowboard 업로드 오류: {e}")
-                continue
-            
-            with tempfile.NamedTemporaryFile(suffix=".py", delete=True) as tmp:
-                tmp.write(content)
-                tmp.flush()
-                
-                # Look up student name for Docker env
-                student_name = db.get_student_name(student_id) or ""
-                
-                result = engine.evaluate(
-                    Path(tmp.name), 
-                    assignment_dir, 
-                    student_info={"student_id": student_id, "student_name": student_name}
-                )
-                
-                # Verdict Logic
-                current_verdict = "AC"
-                if result.system_error:
-                    current_verdict = "SYS"
-                else:
-                    is_pass = True
-                    for res in result.results:
-                        if not res.is_correct:
-                            is_pass = False
-                            msg = res.message or ""
-                            if "Time Limit" in msg:
-                                current_verdict = "TLE"
-                                break
-                            elif "Memory Limit" in msg:
-                                current_verdict = "MLE"
-                                break
-                            elif "Error" in msg or "Exception" in msg: 
-                                current_verdict = "RTE" 
-                                break
-                            else:
-                                current_verdict = "WA"
-                    if is_pass:
-                        current_verdict = "AC"
-                
-                # Calculate Comment & Failure Details
-                attempt_count = db.get_submission_count(int(assignment_id), student_id)
-                failure_details_json = None
-                
-                if result.total_score == 1.0:
-                    comment = "정답입니다!"
-                else:
-                    comment = f"{attempt_count}번째 시도, 오답입니다."
-                    
-                    # Append exception/error details if available
-                    for res in result.results:
-                         if not res.is_correct:
-                             # Capture first failure details for DB (Admin Debug)
-                             if not failure_details_json:
-                                 import json
-                                 details = {
-                                     "test_case_id": res.test_case_id,
-                                     "input": getattr(res, "input_data", None),
-                                     "actual_output": res.stdout,
-                                     "expected_output": getattr(res, "expected_output", None), # From StandardJudge
-                                     "traceback": res.stderr,
-                                     "message": res.message
-                                 }
-                                 failure_details_json = json.dumps(details, ensure_ascii=False)
-
-                             # Comment Logic (Student Feedback)
-                             # Prioritize stderr for Python tracebacks (StandardJudge)
-                             # Only log if stderr is present (indicates Runtime Error / Exception)
-                             # We ignore 'message' here (e.g. "Wrong Answer", "Time Limit Exceeded") 
-
-                             raw_error = (res.stderr or "").strip()
-                             
-                             if raw_error:
-                                 from src.utils.sanitizer import sanitize_traceback
-                                 clean_trace = sanitize_traceback(raw_error)
-                                 
-                                 # Limit length to avoid massive comments
-                                 if len(clean_trace) > 1000:
-                                     clean_trace = clean_trace[:1000] + "\n... (Truncated)"
-                                     
-                                 if clean_trace:
-                                     comment += f"\nError Logs:\n<pre>\n{clean_trace}\n</pre>\n"
-                                     break 
-                
-                if result.system_error:
-                    comment += f" (System Error: {result.system_error})"
-                
-                logger.info(f"  -> {current_verdict} (Score: {result.total_score:.2f}, Attempt: {attempt_count}) {'[DRY RUN]' if dry_run else ''}")
-                
-                if not dry_run:
-                    # Update DB (Store Actual Score: ratio * max_score)
-                    final_score_points = result.total_score * max_score
-                    
-                    db.update_submission_result(
-                        sid, 
-                        final_score_points, 
-                        current_verdict, 
-                        comment,
-                        failure_details=failure_details_json
+                with tempfile.NamedTemporaryFile(suffix=".py", delete=True) as tmp:
+                    tmp.write(content)
+                    tmp.flush()
+    
+                    # Look up student name for Docker env
+                    student_name = db.get_student_name(student_id) or ""
+    
+                    result = engine.evaluate(
+                        Path(tmp.name), 
+                        assignment_dir, 
+                        student_info={"student_id": student_id, "student_name": student_name}
                     )
-                    
-                    # Upload to Snowboard
-                    if sb and grade_url:
-                        upload_score = result.total_score * max_score
-                        logger.info(f"  Uploading score to Snowboard (Raw: {result.total_score} * Max: {max_score} = {upload_score})...")
-                        try:
-                            ok = sb.submit_score(grade_url, upload_score, comment)
-                            if ok:
-                                logger.info("  Upload Success.")
-                                # Lock submission if student achieved max score (skip for professor)
-                                if upload_score >= max_score and student_id != os.environ.get("SNOWBOARD_USER", ""):
-                                    lock_url = (lock_map or {}).get(student_id)
-                                    if lock_url:
-                                        try:
-                                            sb.lock_submission(lock_url)
-                                            logger.info(f"  Submission locked (max score achieved).")
-                                        except Exception as e:
-                                            logger.error(f"  Lock Error: {e}")
-                            else:
-                                logger.error("  Upload Failed (Snowboard returned false).")
-                                push(f"Snowboard 업로드 실패: {student_id}")
-                        except Exception as e:
-                            logger.error(f"  Upload Error: {e}")
-                            push(f"Snowboard 업로드 오류: {student_id} - {e}")
-                    elif not grade_url:
-                        logger.warning("  No grade_url found for submission. Cannot upload.")
-                    
-        except Exception as e:
-            logger.error(f"Grading failed for {sid}: {e}")
-            push(f"채점 오류 발생! Submission {sid}: {e}")
-            if not dry_run:
-                db.update_submission_result(sid, 0.0, "SYS", f"Judge Error: {e}")
+    
+                    # Verdict Logic
+                    current_verdict = "AC"
+                    if result.system_error:
+                        current_verdict = "SYS"
+                    else:
+                        is_pass = True
+                        for res in result.results:
+                            if not res.is_correct:
+                                is_pass = False
+                                msg = res.message or ""
+                                if "Time Limit" in msg:
+                                    current_verdict = "TLE"
+                                    break
+                                elif "Memory Limit" in msg:
+                                    current_verdict = "MLE"
+                                    break
+                                elif "Error" in msg or "Exception" in msg: 
+                                    current_verdict = "RTE" 
+                                    break
+                                else:
+                                    current_verdict = "WA"
+                        if is_pass:
+                            current_verdict = "AC"
+    
+                    # Calculate Comment & Failure Details
+                    attempt_count = db.get_submission_count(int(assignment_id), student_id)
+                    failure_details_json = None
+    
+                    if result.total_score == 1.0:
+                        comment = "정답입니다!"
+                    else:
+                        comment = f"{attempt_count}번째 시도, 오답입니다."
+    
+                        # Append exception/error details if available
+                        for res in result.results:
+                             if not res.is_correct:
+                                 # Capture first failure details for DB (Admin Debug)
+                                 if not failure_details_json:
+                                     import json
+                                     details = {
+                                         "test_case_id": res.test_case_id,
+                                         "input": getattr(res, "input_data", None),
+                                         "actual_output": res.stdout,
+                                         "expected_output": getattr(res, "expected_output", None), # From StandardJudge
+                                         "traceback": res.stderr,
+                                         "message": res.message
+                                     }
+                                     failure_details_json = json.dumps(details, ensure_ascii=False)
+    
+                                 # Comment Logic (Student Feedback)
+                                 # Prioritize stderr for Python tracebacks (StandardJudge)
+                                 # Only log if stderr is present (indicates Runtime Error / Exception)
+                                 # We ignore 'message' here (e.g. "Wrong Answer", "Time Limit Exceeded") 
+    
+                                 raw_error = (res.stderr or "").strip()
+    
+                                 if raw_error:
+                                     from src.utils.sanitizer import sanitize_traceback
+                                     clean_trace = sanitize_traceback(raw_error)
+    
+                                     # Limit length to avoid massive comments
+                                     if len(clean_trace) > 1000:
+                                         clean_trace = clean_trace[:1000] + "\n... (Truncated)"
+    
+                                     if clean_trace:
+                                         comment += f"\nError Logs:\n<pre>\n{clean_trace}\n</pre>\n"
+                                         break 
+    
+                    if result.system_error:
+                        comment += f" (System Error: {result.system_error})"
+    
+                    logger.info(f"  -> {current_verdict} (Score: {result.total_score:.2f}, Attempt: {attempt_count}) {'[DRY RUN]' if dry_run else ''}")
+    
+                    if not dry_run:
+                        # Update DB (Store Actual Score: ratio * max_score)
+                        final_score_points = result.total_score * max_score
+    
+                        db.update_submission_result(
+                            sid, 
+                            final_score_points, 
+                            current_verdict, 
+                            comment,
+                            failure_details=failure_details_json
+                        )
+    
+                        # Upload to Snowboard
+                        if sb and grade_url:
+                            upload_score = result.total_score * max_score
+                            logger.info(f"  Uploading score to Snowboard (Raw: {result.total_score} * Max: {max_score} = {upload_score})...")
+                            try:
+                                ok = sb.submit_score(grade_url, upload_score, comment)
+                                if ok:
+                                    logger.info("  Upload Success.")
+                                    # Lock submission if student achieved max score (skip for professor)
+                                    if upload_score >= max_score and student_id != os.environ.get("SNOWBOARD_USER", ""):
+                                        lock_url = (lock_map or {}).get(student_id)
+                                        if lock_url:
+                                            try:
+                                                sb.lock_submission(lock_url)
+                                                logger.info(f"  Submission locked (max score achieved).")
+                                            except Exception as e:
+                                                logger.error(f"  Lock Error: {e}")
+                                else:
+                                    logger.error("  Upload Failed (Snowboard returned false).")
+                                    push(f"Snowboard 업로드 실패: {student_id}")
+                            except Exception as e:
+                                logger.error(f"  Upload Error: {e}")
+                                push(f"Snowboard 업로드 오류: {student_id} - {e}")
+                        elif not grade_url:
+                            logger.warning("  No grade_url found for submission. Cannot upload.")
+    
+            except Exception as e:
+                logger.error(f"Grading failed for {sid}: {e}")
+                push(f"채점 오류 발생! Submission {sid}: {e}")
+                if not dry_run:
+                    db.update_submission_result(sid, 0.0, "SYS", f"Judge Error: {e}")
+            finally:
+                GRADING_QUEUE.discard(sid)
+
+    for i, sub in enumerate(submissions):
+        sid = sub['id']
+        if sid in GRADING_QUEUE:
+            continue
+        GRADING_QUEUE.add(sid)
+        GLOBAL_EXECUTOR.submit(process_submission, i, sub)
 
 # --- Command Handlers ---
 
@@ -736,6 +750,7 @@ def main():
     
     args = parser.parse_args()
     args.func(args)
+    GLOBAL_EXECUTOR.shutdown(wait=True)
 
 if __name__ == "__main__":
     main()

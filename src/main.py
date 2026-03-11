@@ -493,6 +493,11 @@ def cmd_evaluate(args):
             print(f"Case {cf.test_case_id}: {status}")
             if not cf.is_correct:
                 print(f"  Message: {cf.message}")
+            if cf.stderr:
+                from src.utils.sanitizer import sanitize_traceback
+                cl_st = sanitize_traceback(cf.stderr)
+                if cl_st:
+                    print(f"  Traceback:\n{cl_st}")
         print("="*40 + "\n")
     except Exception as e:
         logger.exception(e)

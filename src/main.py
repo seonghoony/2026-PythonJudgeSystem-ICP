@@ -417,7 +417,11 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                                          break 
     
                     if result.system_error:
-                        comment += f" (System Error: {result.system_error})"
+                        from src.utils.sanitizer import sanitize_system_error
+                        san_msg, should_alert = sanitize_system_error(result.system_error)
+                        comment += san_msg
+                        if should_alert:
+                            push(f"🚨 System Error (Assign {assignment_id}, Sub {sid}):\n{result.system_error}")
     
                     logger.info(f"  -> {current_verdict} (Score: {result.total_score:.2f}, Attempt: {attempt_count}) {'[DRY RUN]' if dry_run else ''}")
     

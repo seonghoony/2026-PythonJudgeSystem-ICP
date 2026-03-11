@@ -45,3 +45,14 @@ def sanitize_traceback(text: str) -> str:
             filtered.append(line)
             
     return "\n".join(filtered).strip()
+
+def sanitize_system_error(error_msg: str) -> tuple[str, bool]:
+    """
+    Translates raw system errors into student-friendly Korean comments.
+    Returns a tuple: (sanitized_comment, should_alert_admin)
+    """
+    if "Execution Timed Out" in error_msg:
+        return " (시스템 안내: 실행 시간이 초과되었습니다. 무한 루프가 발생했거나 연산량이 너무 많지 않은지 확인해주세요.)", False
+    
+    # All other internal system errors (Malformed output, Docker crash, Hook errors, etc.)
+    return " (시스템 오류가 발생했습니다. 담당 조교에게 문의해주세요.)", True

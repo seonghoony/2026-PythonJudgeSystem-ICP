@@ -648,6 +648,17 @@ def cmd_monitor(args):
                             # Decision Logic
                             should_process = False
                             
+                            # Helper: check if assignment week has started
+                            week_start_str = row.get('week_start')
+                            week_started = True  # Default: assume started if no data
+                            if week_start_str and str(week_start_str) not in ('', 'None', 'NaT'):
+                                try:
+                                    ws_dt = pd.to_datetime(week_start_str)
+                                    if ws_dt > now:
+                                        week_started = False
+                                except Exception:
+                                    pass
+                            
                             # 1. CLI Override (Manual Selection)
                             if args.assignment:
                                 if str(args.assignment) == str(aid):
@@ -656,6 +667,8 @@ def cmd_monitor(args):
                                     continue # Skip unrelated assignments if filtering by ID
                             
                             elif args.lecture: 
+                                 if not week_started:
+                                     continue  # Defer until week starts
                                  end_date_str = row.get('종료 일시', '-')
                                  if end_date_str and end_date_str != '-':
                                      try:
@@ -670,6 +683,9 @@ def cmd_monitor(args):
                                 # Standard Monitor (No overrides)
                                 if aid_int in blacklist:
                                     continue
+                                
+                                if not week_started:
+                                    continue  # Defer until week starts
                                     
                                 if aid_int in whitelist:
                                     should_process = True

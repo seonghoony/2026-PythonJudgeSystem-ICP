@@ -31,4 +31,8 @@ def validate_submission(content: bytes, filename: str = "") -> Tuple[bool, Optio
             "코드 셀에 작성한 파이썬 코드를 갈무리하여 파이썬 스크립트로 제출하세요."
         )
 
+    # 4. Binary check (null bytes)
+    if b'\x00' in content[:1024]:
+        return False, "오답입니다. 파이썬 문법으로 작성된 텍스트 파일(.py)이 아닌 이미지 등의 파일이 제출되었습니다."
+
     return True, None

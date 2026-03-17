@@ -3,14 +3,12 @@ import pymysql
 import logging
 from typing import List
 
-# Setup Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# Config
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_USER = os.environ.get("DB_USER", "root")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
@@ -141,21 +139,17 @@ DDL_STATEMENTS = [
 def init_db():
     logger.info(f"Initializing Database: {DB_NAME}")
     
-    # Connect to MySQL (no DB selected initially to create it)
     conn = pymysql.connect(
         host=DB_HOST, user=DB_USER, password=DB_PASSWORD
     )
     
     try:
         with conn.cursor() as cursor:
-            # Create Database
             cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
             logger.info(f"Database {DB_NAME} ensured.")
             
-            # Use Database
             cursor.execute(f"USE {DB_NAME}")
             
-            # Create Tables
             for ddl in DDL_STATEMENTS:
                 try:
                     cursor.execute(ddl)

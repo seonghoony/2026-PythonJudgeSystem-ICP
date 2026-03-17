@@ -29,7 +29,6 @@ class DockerSandbox:
         
         image_tag = f"image_{assignment_config.id}"
         
-        # 1. Generate Dockerfile Content
         dockerfile_content = f"FROM {assignment_config.build.base_image}\n"
         dockerfile_content += "RUN mamba install -y python=3.14\n"
         
@@ -39,10 +38,8 @@ class DockerSandbox:
         
         dockerfile_content += "WORKDIR /app\n"
         
-        # 2. Compute Hash
         build_hash = hashlib.md5(dockerfile_content.encode()).hexdigest()
         
-        # 3. Check Existing Image
         check_cmd = f"docker inspect {image_tag}"
         res = DockerSandbox._run_cmd(check_cmd, timeout=10)
         
@@ -58,10 +55,8 @@ class DockerSandbox:
                 pass # JSON parse error or other, force build
         
         if not needs_build:
-            # print(f"[Sandbox] Using cached image {image_tag}.")
             return image_tag
 
-        # 4. Build
         print(f"[Sandbox] Building image {image_tag}...")
         
         with tempfile.TemporaryDirectory() as build_ctx:
@@ -94,36 +89,24 @@ class DockerSandbox:
         image_tag = f"image_{assignment_config.id}"
         resources = assignment_config.resources
         
-        # Prepare mounts
-        # 1. Submission: mapped to /submission (directory) or /Target.py (file)
-        # Architecture says: "Mount Student Submission -> Read-Only"
-        # Since we use launcher, we mount submission to /submission dir or /Target.py
-
-        
         mount_cmd = ""
         if submission_path.is_dir():
             mount_cmd += f"-v {submission_path.absolute()}:/submission:ro "
         else:
             mount_cmd += f"-v {submission_path.absolute()}:/Target.py:ro "
             
-        # 2. Assignment Data: /assignment
         mount_cmd += f"-v {assignment_dir.absolute()}:/assignment:ro "
         
-        # 3. Launcher Script
         launcher_path = Path("src/utils/launcher_script.py").absolute()
         mount_cmd += f"-v {launcher_path}:/launcher.py:ro " 
         
-        # Network
         net_flag = "--net none" if resources.network_disabled else ""
         
-        # Environment Variables
         env_cmd = f"-e JUDGE_MODE={mode} -e JUDGE_TIMEOUT={resources.timeout} "
         if env_vars:
             for k, v in env_vars.items():
                 env_cmd += f"-e {k}='{v}' "
 
-        # Docker Command
-        # We run the launcher
         cmd = (
             f"docker run --rm "
             f"--cpus={resources.cpu_count} "

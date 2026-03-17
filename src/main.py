@@ -15,27 +15,21 @@ import os
 GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 4) - 2))
 GRADING_QUEUE = set()
 
-# Load Env
 load_dotenv()
 
-# Fix Import Path (Allow running as `python src/main.py`)
 sys.path.append(str(Path(__file__).parent.parent))
 
-# Core & Models
 from src.models.schema import AssignmentConfig, EvaluationResult
 from src.core.sandbox import DockerSandbox
 from src.core.standard_judge import StandardJudge
 from src.core.special_judge import SpecialJudge
 
-# Infrastructure
 from src.infrastructure.snowboard import SnowBoard
 from src.infrastructure import database as db
 from src.infrastructure.telegram import push
 
-# Utils
 from src.utils.file_validator import validate_submission
 
-# Setup Logging
 from rich.logging import RichHandler
 
 logging.basicConfig(
@@ -63,7 +57,6 @@ def load_monitor_config() -> Dict:
     with open(path) as f:
         return yaml.safe_load(f)
 
-# --- Reusable Logic ---
 
 def run_evaluate(
     assignment_id: str, 
@@ -71,7 +64,6 @@ def run_evaluate(
     student_id: str = "test_student",
     build: bool = False
 ):
-    """Run single file evaluation (No DB)."""
     logger.info(f"Loading config for {assignment_id}...")
     config = load_config(assignment_id)
     
@@ -131,12 +123,11 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         assignments[int(aid)] = {'title': aname, 'week_start': week_start, 'week_end': week_end}
         db.ensure_assignment(int(aid), lecture_id, aname, week_start, week_end)
 
-    fresh_urls = {} # Transient storage for grade_urls  
-    lock_urls = {}  # Transient storage for 제출변경방지href (submission lock)
+    fresh_urls = {}  
+    lock_urls = {}  
     for aid, item in assignments.items():
         logger.debug(f"Fetching submissions for {item.get('title')} ({aid}) [Filter: {filter_status}]...")
         
-        # 1. List Submissions
         df = sb.list_submissions(aid, filter_status=filter_status)
         db.ensure_assignment(int(aid), lecture_id, item.get('title'), item.get('week_start'), item.get('week_end'))
         
@@ -155,23 +146,17 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
             
             db.ensure_student(sid, sname, lecture_id)
             
-            href = row.get('첨부파일href') # File download link
-            grade_url = row.get('성적버튼href') # Grading page link
-            lock_url = row.get('제출변경방지href') # Submission lock link
-            ts = row.get('최근 제출일', '') # Timestamp string
+            href = row.get('첨부파일href')
+            grade_url = row.get('성적버튼href')
+            lock_url = row.get('제출변경방지href')
+            ts = row.get('최근 제출일', '')
             max_score_val = float(row.get('max_score', 100.0))
             
-            # Store transient URLs for immediate grading
             if grade_url:
                 fresh_urls[sid] = grade_url
             if lock_url:
                 lock_urls[sid] = lock_url
 
-            # Deduplication Logic
-            # 1. If filter_status == 'requiregrading', ALWAYS fetch (Trust Snowboard)
-            # 2. If force=True, ALWAYS fetch (We want to regrade/refresh)
-            # 3. Otherwise, check timestamp to avoid redundant fetch
-            
             is_duplicate = False
             if filter_status != 'requiregrading' and not force:
                 last_ts = db.get_last_submission_time(int(aid), sid)
@@ -186,15 +171,12 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                             is_duplicate = True
             
             if is_duplicate:
-                # logger.debug(f"Skipping {sname} ({sid}): Unchanged")
                 continue
 
             try:
-                # Check for missing attachment
                 if not href:
                     logger.info(f"  {sname} ({sid}): No attachment — recording as score 0.")
                     fetched_at = time.strftime('%Y-%m-%d %H:%M:%S')
-                    # Record empty submission
                     empty_md5 = db.record_file(b"")
                     db.record_submission(
                         assignment_id=int(aid),
@@ -208,7 +190,6 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                         is_force=force,
                         max_score=max_score_val
                     )
-                    # Upload score 0 to Snowboard
                     if grade_url:
                         try:
                             sb.submit_score(grade_url, 0.0, "오답입니다. 제출물에 파일이 첨부되지 않았습니다.")
@@ -218,7 +199,6 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                     count += 1
                     continue
 
-                # Just fetch.
                 content = sb.fetch_submission(href)
                 md5 = db.record_file(content)
                 
@@ -243,10 +223,8 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         if count > 0:
             logger.info(f"Fetched {count} new submissions.")
         
-        # Record fetch time for this assignment
         db.update_assignment_fetch_time(int(aid))
     
-    # Record fetch time for this lecture
     db.update_lecture_fetch_time(lecture_id)
     
     return fresh_urls, lock_urls
@@ -254,14 +232,12 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
 def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, url_map: Dict[str, str] = None, lock_map: Dict[str, str] = None, sb: Optional[SnowBoard] = None):
     """Grade ungraded submissions from DB. If force=True, grade ALL."""
     
-    # Instantiate Snowboard only if we might upload (and wasn't passed)
     if not dry_run and sb is None:
         try:
             sb = SnowBoard()
         except Exception as e:
             logger.warning(f"Snowboard login failed in grade step: {e}. Uploads might fail.")
 
-    # 1. Config & Engine
     try:
         config = load_config(assignment_id)
     except FileNotFoundError:
@@ -270,7 +246,6 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
 
     assignment_dir = Path(f"assignments/{assignment_id}").absolute()
     
-    # Ensure Image
     DockerSandbox.build_image(config)
     
     if config.type == "standard":
@@ -281,7 +256,6 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
         logger.error(f"Unknown type: {config.type}")
         return
 
-    # 2. Fetch Ungraded (or All if force)
     submissions = db.get_ungraded_submissions(int(assignment_id), limit=100, force=force)
     
     if not submissions:
@@ -317,7 +291,6 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
             try:
                 content = db.get_file_content(md5)
     
-                # --- Inline File Validation (pre-evaluation) ---
                 is_valid, validation_error = validate_submission(content)
                 if not is_valid:
                     attempt_count = db.get_submission_count(int(assignment_id), student_id)
@@ -339,7 +312,6 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                     tmp.write(content)
                     tmp.flush()
     
-                    # Look up student name for Docker env
                     student_name = db.get_student_name(student_id) or ""
     
                     result = engine.evaluate(
@@ -348,7 +320,6 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                         student_info={"student_id": student_id, "student_name": student_name}
                     )
     
-                    # Verdict Logic
                     current_verdict = "AC"
                     if result.system_error:
                         current_verdict = "SYS"
@@ -372,7 +343,6 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                         if is_pass:
                             current_verdict = "AC"
     
-                    # Calculate Comment & Failure Details
                     attempt_count = db.get_submission_count(int(assignment_id), student_id)
                     failure_details_json = None
     
@@ -440,7 +410,6 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                             failure_details=failure_details_json
                         )
     
-                        # Upload to Snowboard
                         if sb and grade_url:
                             upload_score = result.total_score * max_score
                             logger.info(f"  Uploading score to Snowboard (Raw: {result.total_score} * Max: {max_score} = {upload_score})...")
@@ -597,7 +566,6 @@ def cmd_monitor(args):
     """Infinite loop mode."""
     logger.info(f"Starting Monitor (Dry-Run: {args.dry_run}, Force: {args.force})")
     push("채점기 시작했습니다.")
-    
     monitor_state = {
         "active_assignment": None,
         "assignments": [],
@@ -628,7 +596,6 @@ def cmd_monitor(args):
                 now_str = datetime.now().strftime("%H:%M:%S")
                 monitor_state["last_check"] = now_str
                 
-                # First pass: Determine which assignments to track
                 monitor_state["assignments"] = []
                 
                 for lecture_id in lectures:
@@ -638,7 +605,6 @@ def cmd_monitor(args):
                         if df.empty:
                             continue
                             
-                        # Update DB stats for this lecture
                         lec_stats = db.get_assignment_stats(lecture_id)
                         monitor_state["stats"].update(lec_stats)
                         
@@ -648,12 +614,10 @@ def cmd_monitor(args):
                             aid_int = int(aid)
                             aname = row.get('과제', 'Unknown')
                             
-                            # Decision Logic
                             should_process = False
                             
-                            # Helper: check if assignment week has started
                             week_start_str = row.get('week_start')
-                            week_started = True  # Default: assume started if no data
+                            week_started = True
                             if week_start_str and str(week_start_str) not in ('', 'None', 'NaT'):
                                 try:
                                     ws_dt = pd.to_datetime(week_start_str)
@@ -662,16 +626,15 @@ def cmd_monitor(args):
                                 except Exception:
                                     pass
                             
-                            # 1. CLI Override (Manual Selection)
                             if args.assignment:
                                 if str(args.assignment) == str(aid):
                                     should_process = True
                                 else:
-                                    continue # Skip unrelated assignments if filtering by ID
+                                    continue
                             
                             elif args.lecture: 
                                  if not week_started:
-                                     continue  # Defer until week starts
+                                     continue
                                  end_date_str = row.get('종료 일시', '-')
                                  if end_date_str and end_date_str != '-':
                                      try:
@@ -681,14 +644,13 @@ def cmd_monitor(args):
                                      except:
                                          pass
                                  else:
-                                     should_process = True # No end date
+                                     should_process = True
                             else:
-                                # Standard Monitor (No overrides)
                                 if aid_int in blacklist:
                                     continue
                                 
                                 if not week_started:
-                                    continue  # Defer until week starts
+                                    continue
                                     
                                 if aid_int in whitelist:
                                     should_process = True
@@ -712,17 +674,14 @@ def cmd_monitor(args):
                     except Exception as e:
                         logger.error(f"Error checking lecture {lecture_id}: {e}")
 
-                # Update table before fetching submissions
                 live.update(generate_table(monitor_state))
                 
-                # Second pass: Process the filtered assignments
                 for task in monitor_state["assignments"]:
                     monitor_state["active_assignment"] = task["aid"]
                     live.update(generate_table(monitor_state))
                     
                     run_loop_body(task["lecture_id"], task["aid"], args.dry_run, args.force, sb=sb)
                     
-                    # Update stats dynamically from DB after grading
                     new_stats = db.get_assignment_stats(task["lecture_id"])
                     monitor_state["stats"].update(new_stats)
                     live.update(generate_table(monitor_state))

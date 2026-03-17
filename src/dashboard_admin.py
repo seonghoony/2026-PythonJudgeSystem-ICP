@@ -14,18 +14,15 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-# Fix Import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.infrastructure import database as db
 
-# Load Env
 load_dotenv()
 
 app = FastAPI(title="PythonJudgeSystem Admin Dashboard")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "web" / "templates"))
 
-# Template Filter for JSON parsing (used for failure_details)
 def parse_json(value):
     if not value: return None
     try:
@@ -53,11 +50,9 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
         credentials.password.encode("utf8"), correct_password.encode("utf8")
     )
     
-    # Check main admin account
     if is_correct_username and is_correct_password:
         return credentials.username
         
-    # Check TA accounts from DB
     if db.verify_ta_account(credentials.username, credentials.password):
         return credentials.username
         
@@ -89,14 +84,12 @@ def verify_lecture_access(request: Request, lecture_id: int, username: str = Dep
 
 @app.get("/admin/roaster/{lecture_id}", response_class=HTMLResponse)
 async def admin_lecture_view(request: Request, lecture_id: int, _: str = Depends(verify_lecture_access)):
-    # Get lecture name
     sql_lecture = "SELECT name FROM lectures WHERE id = %s"
     lecture_rows = db.execute_query(sql_lecture, (lecture_id,), fetch=True)
     lecture_name = lecture_rows[0]['name'] if lecture_rows else f"Lecture {lecture_id}"
     
     students = db.get_admin_lecture_students(lecture_id)
     
-    # We need a unique list of assignments to build the table headers
     assignments = []
     if students and students[0].get('assignments'):
         assignments = [{'id': a['assignment_id'], 'name': a['name']} for a in students[0]['assignments']]
@@ -112,21 +105,16 @@ async def admin_lecture_view(request: Request, lecture_id: int, _: str = Depends
 
 @app.get("/admin/roaster/{lecture_id}/{student_id}", response_class=HTMLResponse)
 async def admin_student_summary_view(request: Request, lecture_id: int, student_id: str, _: str = Depends(verify_lecture_access)):
-    # Fetch Student Info
     student_info = db.get_student_info(student_id)
     student_name = student_info['name'] if student_info else student_id
     student_dept = student_info['department'] if student_info and 'department' in student_info else "Unknown Department"
     
-    # Get lecture name
     sql_lecture = "SELECT name FROM lectures WHERE id = %s"
     lecture_rows = db.execute_query(sql_lecture, (lecture_id,), fetch=True)
     lecture_name = lecture_rows[0]['name'] if lecture_rows else f"Lecture {lecture_id}"
     
-    # Fetch all submissions for the student in this lecture
     all_submissions = db.get_student_all_submissions(student_id, lecture_id)
     
-    # Group by assignment_id
-    # Since the query is ordered by assignment_id DESC, we can preserve the order manually
     grouped_assignments = {}
     for sub in all_submissions:
         aid = sub['assignment_id']
@@ -151,12 +139,10 @@ async def admin_student_summary_view(request: Request, lecture_id: int, student_
 
 @app.get("/admin/roaster/{lecture_id}/{student_id}/{assignment_id}", response_class=HTMLResponse)
 async def admin_student_view(request: Request, lecture_id: int, student_id: str, assignment_id: int, _: str = Depends(verify_lecture_access)):
-    # Fetch Student Info
     student_info = db.get_student_info(student_id)
     student_name = student_info['name'] if student_info else student_id
     student_dept = student_info['department'] if student_info and 'department' in student_info else "Unknown Department"
     
-    # Fetch Assignment Info
     sql_assign = "SELECT name FROM assignments WHERE id = %s"
     assign_rows = db.execute_query(sql_assign, (assignment_id,), fetch=True)
     assignment_name = assign_rows[0]['name'] if assign_rows else f"Assignment {assignment_id}"
@@ -201,15 +187,12 @@ async def admin_feed_view(request: Request, username: str = Depends(log_dashboar
 
     feed = db.get_global_feed(limit=50, allowed_lecture_ids=allowed_lecture_ids)
     
-    # Get all lectures for navigation links
     sql_lectures = "SELECT id, name FROM lectures ORDER BY id ASC"
     lectures = db.execute_query(sql_lectures, fetch=True) or []
     
-    # Filter lectures if TA
     if allowed_lecture_ids is not None:
         lectures = [l for l in lectures if l['id'] in allowed_lecture_ids]
     
-    # Build monitor stats
     monitor_config_path = Path("config/monitor.yaml")
     conf = {}
     if monitor_config_path.exists():
@@ -221,7 +204,6 @@ async def admin_feed_view(request: Request, username: str = Depends(log_dashboar
              
     monitored_lectures = conf.get("lectures", [l['id'] for l in lectures])
     
-    # Filter for TA access
     if allowed_lecture_ids is not None:
         monitored_lectures = [l for l in monitored_lectures if l in allowed_lecture_ids]
         
@@ -257,7 +239,6 @@ async def admin_feed_view(request: Request, username: str = Depends(log_dashboar
             })
             count += 1
             
-    # Explicitly sort by Lecture ID then Assignment ID (Ascending)
     monitor_table.sort(key=lambda x: (x['lecture_id'], x['aid']))
     
     return templates.TemplateResponse(
@@ -278,7 +259,6 @@ async def api_feed_data(username: str = Depends(verify_credentials)):
 
     feed = db.get_global_feed(limit=50, allowed_lecture_ids=allowed_lecture_ids)
     
-    # Build monitor stats
     monitor_config_path = Path("config/monitor.yaml")
     conf = {}
     if monitor_config_path.exists():
@@ -288,12 +268,10 @@ async def api_feed_data(username: str = Depends(verify_credentials)):
         except Exception:
              pass
              
-    # Default to all active lectures in DB if not listed in monitor.yaml
     sql_lectures = "SELECT id FROM lectures"
     all_lecs = db.execute_query(sql_lectures, fetch=True) or []
     monitored_lectures = conf.get("lectures", [l['id'] for l in all_lecs])
     
-    # Filter for TA access
     if allowed_lecture_ids is not None:
         monitored_lectures = [l for l in monitored_lectures if l in allowed_lecture_ids]
         
@@ -331,7 +309,6 @@ async def api_feed_data(username: str = Depends(verify_credentials)):
             
     monitor_table.sort(key=lambda x: (x['lecture_id'], x['aid']))
     
-    # Pre-parse failure_details in feed so frontend doesn't struggle
     for item in feed:
        if item.get('verdict') and item.get('verdict') != 'AC' and item.get('failure_details'):
            try:
@@ -353,11 +330,9 @@ async def api_feed_data(username: str = Depends(verify_credentials)):
 async def get_photo(student_id: str, _: str = Depends(verify_credentials)):
     photo_bytes = db.get_student_photo(student_id)
     if not photo_bytes:
-        # Return a tiny transparent GIF if no photo exists
         transparent_gif = b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
         return Response(content=transparent_gif, media_type="image/gif")
     
-    # Assume JPEG for now, ideally we should detect MIME type or store it.
     return Response(content=photo_bytes, media_type="image/jpeg")
 
 def main():

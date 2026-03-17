@@ -53,16 +53,42 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
         credentials.password.encode("utf8"), correct_password.encode("utf8")
     )
     
-    if not (is_correct_username and is_correct_password):
+    # Check main admin account
+    if is_correct_username and is_correct_password:
+        return credentials.username
+        
+    # Check TA accounts from DB
+    if db.verify_ta_account(credentials.username, credentials.password):
+        return credentials.username
+        
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Incorrect username or password",
+        headers={"WWW-Authenticate": "Basic"},
+    )
+
+def log_dashboard_access(request: Request, username: str = Depends(verify_credentials)):
+    """Log access for all users (Admin and TAs) to the dashboard."""
+    # Don't log static assets or API polling closely, focus on main views
+    path = request.url.path
+    db.log_ta_access(username, path)
+    return username
+
+def verify_lecture_access(request: Request, lecture_id: int, username: str = Depends(log_dashboard_access)):
+    """Verify that the user has access to the specified lecture, logging access first."""
+    admin_username = os.environ.get("SNOWBOARD_USER", "")
+    if username == admin_username:
+        return username  # Admin has full access
+        
+    if not db.check_ta_lecture_access(username, lecture_id):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"TA {username} is not authorized to view lecture {lecture_id}",
         )
-    return credentials.username
+    return username
 
 @app.get("/admin/roaster/{lecture_id}", response_class=HTMLResponse)
-async def admin_lecture_view(request: Request, lecture_id: int, _: str = Depends(verify_credentials)):
+async def admin_lecture_view(request: Request, lecture_id: int, _: str = Depends(verify_lecture_access)):
     # Get lecture name
     sql_lecture = "SELECT name FROM lectures WHERE id = %s"
     lecture_rows = db.execute_query(sql_lecture, (lecture_id,), fetch=True)
@@ -85,7 +111,7 @@ async def admin_lecture_view(request: Request, lecture_id: int, _: str = Depends
     )
 
 @app.get("/admin/roaster/{lecture_id}/{student_id}", response_class=HTMLResponse)
-async def admin_student_summary_view(request: Request, lecture_id: int, student_id: str, _: str = Depends(verify_credentials)):
+async def admin_student_summary_view(request: Request, lecture_id: int, student_id: str, _: str = Depends(verify_lecture_access)):
     # Fetch Student Info
     student_info = db.get_student_info(student_id)
     student_name = student_info['name'] if student_info else student_id
@@ -122,7 +148,7 @@ async def admin_student_summary_view(request: Request, lecture_id: int, student_
     )
 
 @app.get("/admin/roaster/{lecture_id}/{student_id}/{assignment_id}", response_class=HTMLResponse)
-async def admin_student_view(request: Request, lecture_id: int, student_id: str, assignment_id: int, _: str = Depends(verify_credentials)):
+async def admin_student_view(request: Request, lecture_id: int, student_id: str, assignment_id: int, _: str = Depends(verify_lecture_access)):
     # Fetch Student Info
     student_info = db.get_student_info(student_id)
     student_name = student_info['name'] if student_info else student_id
@@ -147,12 +173,21 @@ async def admin_student_view(request: Request, lecture_id: int, student_id: str,
     )
 
 @app.get("/admin/feed", response_class=HTMLResponse)
-async def admin_feed_view(request: Request, _: str = Depends(verify_credentials)):
-    feed = db.get_global_feed(limit=50)
+async def admin_feed_view(request: Request, username: str = Depends(log_dashboard_access)):
+    admin_username = os.environ.get("SNOWBOARD_USER", "")
+    allowed_lecture_ids = None
+    if username != admin_username:
+        allowed_lecture_ids = db.get_ta_accessible_lectures(username)
+
+    feed = db.get_global_feed(limit=50, allowed_lecture_ids=allowed_lecture_ids)
     
     # Get all lectures for navigation links
     sql_lectures = "SELECT id, name FROM lectures ORDER BY id ASC"
     lectures = db.execute_query(sql_lectures, fetch=True) or []
+    
+    # Filter lectures if TA
+    if allowed_lecture_ids is not None:
+        lectures = [l for l in lectures if l['id'] in allowed_lecture_ids]
     
     # Build monitor stats
     monitor_config_path = Path("config/monitor.yaml")
@@ -209,9 +244,14 @@ async def admin_feed_view(request: Request, _: str = Depends(verify_credentials)
     )
 
 @app.get("/admin/api/feed")
-async def api_feed_data(_: str = Depends(verify_credentials)):
+async def api_feed_data(username: str = Depends(verify_credentials)):
     """Returns JSON data for AJAX polling to prevent UI flicker."""
-    feed = db.get_global_feed(limit=50)
+    admin_username = os.environ.get("SNOWBOARD_USER", "")
+    allowed_lecture_ids = None
+    if username != admin_username:
+        allowed_lecture_ids = db.get_ta_accessible_lectures(username)
+
+    feed = db.get_global_feed(limit=50, allowed_lecture_ids=allowed_lecture_ids)
     
     # Build monitor stats
     monitor_config_path = Path("config/monitor.yaml")
@@ -227,6 +267,11 @@ async def api_feed_data(_: str = Depends(verify_credentials)):
     sql_lectures = "SELECT id FROM lectures"
     all_lecs = db.execute_query(sql_lectures, fetch=True) or []
     monitored_lectures = conf.get("lectures", [l['id'] for l in all_lecs])
+    
+    # Filter for TA access
+    if allowed_lecture_ids is not None:
+        monitored_lectures = [l for l in monitored_lectures if l in allowed_lecture_ids]
+        
     blacklist = set(conf.get("blacklist", []))
     
     monitor_table = []

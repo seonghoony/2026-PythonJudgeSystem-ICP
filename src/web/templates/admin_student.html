@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/python.min.js"></script>
+    <!-- Highlight.js Line Numbers -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlightjs-line-numbers.js/2.8.0/highlightjs-line-numbers.min.js"></script>
     
     <style>
         :root {
@@ -176,7 +178,29 @@
             background: var(--code-bg);
         }
         
+        /* Line Numbers Specific CSS */
+        .hljs-ln-numbers {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            text-align: right;
+            color: #94a3b8;
+            border-right: 1px solid #cbd5e1;
+            vertical-align: top;
+            padding-right: 8px !important;
+            margin-right: 8px !important;
+            min-width: 25px;
+        }
+        
+        .hljs-ln-code {
+            padding-left: 12px !important;
+        }
+
         /* Expected output color overrides to easily distinguish */
+        #input-data { background-color: #f8fafc; color: #334155; }
         #expected-output { background-color: #f0fdf4; color: #14532d; }
         #actual-output { background-color: #fef2f2; color: #7f1d1d; }
 
@@ -225,6 +249,10 @@
                 <div class="panel-header" id="output-title">Execution Result</div>
                 <div class="output-body">
                     <div class="output-pane">
+                        <div class="pane-header">Input Data</div>
+                        <pre id="input-data">...</pre>
+                    </div>
+                    <div class="output-pane">
                         <div class="pane-header">Expected Output</div>
                         <pre id="expected-output">...</pre>
                     </div>
@@ -264,22 +292,28 @@
             codeViewer.textContent = data.code;
             codeViewer.removeAttribute('data-highlighted'); // Force re-highlight
             hljs.highlightElement(codeViewer);
+            hljs.lineNumbersBlock(codeViewer);
 
             // Render Output
+            const inputDataBox = document.getElementById('input-data');
             const expectedBox = document.getElementById('expected-output');
             const actualBox = document.getElementById('actual-output');
             const outputTitle = document.getElementById('output-title');
 
             if (data.verdict === 'AC') {
+                inputDataBox.textContent = "Accepted / No Error Details Recorded";
                 expectedBox.textContent = "Accepted / No Error Details Recorded";
                 actualBox.textContent = "Accepted / No Error Details Recorded";
                 
+                inputDataBox.style.backgroundColor = '#f1f5f9';
+                inputDataBox.style.color = '#475569';
                 expectedBox.style.backgroundColor = '#f1f5f9';
                 expectedBox.style.color = '#475569';
                 actualBox.style.backgroundColor = '#f1f5f9';
                 actualBox.style.color = '#475569';
             } else if (data.failure) {
                 // If it's WA or another Error with structured details
+                inputDataBox.textContent = data.failure.input || 'N/A';
                 expectedBox.textContent = data.failure.expected_output || 'N/A';
                 if(data.failure.traceback) {
                     actualBox.textContent = data.failure.traceback;
@@ -288,11 +322,14 @@
                 }
                 
                 // Reset to error colors
+                inputDataBox.style.backgroundColor = '#f8fafc';
+                inputDataBox.style.color = '#334155';
                 expectedBox.style.backgroundColor = '#f0fdf4';
                 expectedBox.style.color = '#14532d';
                 actualBox.style.backgroundColor = '#fef2f2';
                 actualBox.style.color = '#7f1d1d';
             } else {
+                inputDataBox.textContent = "Processing / No Error Information";
                 expectedBox.textContent = "Processing / No Error Information";
                 actualBox.textContent = "Processing / No Error Information";
             }

@@ -480,8 +480,20 @@ def get_student_all_submissions(student_id: str, lecture_id: int) -> List[Dict]:
             
     return rows
 
-def get_global_feed(limit: int = 50) -> List[Dict]:
-    """Fetch latest submissions across all assignments globally."""
+def get_ta_accessible_lectures(username: str) -> List[int]:
+    """Get the list of lecture IDs that a specific TA is authorized to view."""
+    sql = "SELECT lecture_id FROM ta_lecture_access WHERE username = %s"
+    rows = execute_query(sql, (username,), fetch=True) or []
+    return [row['lecture_id'] for row in rows]
+
+def check_ta_lecture_access(username: str, lecture_id: int) -> bool:
+    """Check if a specific TA is authorized to view a specific lecture."""
+    sql = "SELECT 1 FROM ta_lecture_access WHERE username = %s AND lecture_id = %s"
+    rows = execute_query(sql, (username, lecture_id), fetch=True)
+    return bool(rows)
+
+def get_global_feed(limit: int = 50, allowed_lecture_ids: Optional[List[int]] = None) -> List[Dict]:
+    """Fetch latest submissions across all assignments globally. Optionally restricted to specific lectures."""
     sql = """
     SELECT 
         s.id, s.student_id, st.name as student_name, st.department,
@@ -491,7 +503,30 @@ def get_global_feed(limit: int = 50) -> List[Dict]:
     JOIN students st ON s.student_id = st.student_id
     JOIN assignments a ON s.assignment_id = a.id
     JOIN lectures l ON a.lecture_id = l.id
-    ORDER BY s.submitted_at DESC
-    LIMIT %s
     """
-    return execute_query(sql, (limit,), fetch=True) or []
+    params = []
+    
+    if allowed_lecture_ids is not None:
+        if len(allowed_lecture_ids) == 0:
+            return []  # No accessible lectures
+        placeholders = ', '.join(['%s'] * len(allowed_lecture_ids))
+        sql += f" WHERE a.lecture_id IN ({placeholders})"
+        params.extend(allowed_lecture_ids)
+
+    sql += " ORDER BY s.submitted_at DESC LIMIT %s"
+    params.append(limit)
+
+    return execute_query(sql, tuple(params), fetch=True) or []
+
+# --- TA Feature Support ---
+
+def verify_ta_account(username: str, password_plain: str) -> bool:
+    """Verify TA account credentials."""
+    sql = "SELECT 1 FROM ta_accounts WHERE username = %s AND password_plain = %s"
+    rows = execute_query(sql, (username, password_plain), fetch=True)
+    return bool(rows)
+
+def log_ta_access(username: str, path: str):
+    """Log TA dashboard access."""
+    sql = "INSERT INTO ta_access (username, path) VALUES (%s, %s)"
+    execute_query(sql, (username, path), commit=True)

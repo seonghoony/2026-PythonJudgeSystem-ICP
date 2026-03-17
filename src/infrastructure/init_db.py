@@ -105,6 +105,36 @@ DDL_STATEMENTS = [
         FOREIGN KEY (md5_a) REFERENCES files(md5) ON DELETE CASCADE,
         FOREIGN KEY (md5_b) REFERENCES files(md5) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+
+    # 8. TA Accounts Table
+    """
+    CREATE TABLE IF NOT EXISTS ta_accounts (
+        username VARCHAR(50) PRIMARY KEY,
+        password_plain VARCHAR(255) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+
+    # 9. TA Access Log Table
+    """
+    CREATE TABLE IF NOT EXISTS ta_access (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(50) NOT NULL,
+        accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        path VARCHAR(255) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+    
+    # 10. TA Lecture Access Table
+    """
+    CREATE TABLE IF NOT EXISTS ta_lecture_access (
+        username VARCHAR(50) NOT NULL,
+        lecture_id BIGINT NOT NULL,
+        PRIMARY KEY (username, lecture_id),
+        FOREIGN KEY (username) REFERENCES ta_accounts(username) ON DELETE CASCADE,
+        FOREIGN KEY (lecture_id) REFERENCES lectures(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """
 ]
 

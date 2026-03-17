@@ -1,0 +1,13 @@
+[Unit]
+Description=PythonJudge Monitor Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/seonghoon/2026-PythonJudgeSystem-ICP
+ExecStart=/home/seonghoon/miniforge3/envs/PythonJudgeSystem/bin/python src/main.py monitor --daemon
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

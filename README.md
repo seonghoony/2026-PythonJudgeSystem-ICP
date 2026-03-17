@@ -65,11 +65,29 @@ The system is managed via a single CLI entrypoint.
 ### Monitor (Default Loop)
 Continuously fetches new submissions (`requiregrading`), grades them, and uploads scores.
 
-- **Daemon Mode** (Infinite Loop using Config):
+- **Standard Foreground Mode**:
   ```bash
   python src/main.py monitor
   ```
-  *Reads settings from `config/monitor.yaml`.*
+  *Runs in the foreground with a rich, live-updating terminal dashboard.*
+  
+- **Daemon Mode** (Infinite Loop Background):
+  ```bash
+  python src/main.py monitor --daemon
+  ```
+  *Runs without the rich UI, suitable for systemd background services.*
+  
+- **Viewing Background Status**:
+  If the monitor is running in the background, you can view the live dashboard safely in another terminal:
+  ```bash
+  python src/main.py status
+  ```
+  
+- **Viewing Monitor Logs (systemd)**:
+  If running via the `pythonjudge-monitor.service`, you can stream the standard logs:
+  ```bash
+  journalctl --user -u pythonjudge-monitor.service -f
+  ```
 
 - **Manual Override**:
   ```bash

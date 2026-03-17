@@ -560,12 +560,13 @@ def generate_table(monitor_state: dict) -> 'Table':
         
     return table
 
-def cmd_monitor(args):
+def cmd_status(args):
     from rich.live import Live
     from datetime import datetime
-    """Infinite loop mode."""
-    logger.info(f"Starting Monitor (Dry-Run: {args.dry_run}, Force: {args.force})")
-    push("채점기 시작했습니다.")
+    """Status display mode (read-only monitor loop)."""
+    # Disable most logging to avoid drawing warnings over the rich UI
+    logging.getLogger().setLevel(logging.ERROR)
+    
     monitor_state = {
         "active_assignment": None,
         "assignments": [],
@@ -574,6 +575,132 @@ def cmd_monitor(args):
     }
     
     with Live(generate_table(monitor_state), refresh_per_second=1) as live:
+        while True:
+            try:
+                conf = load_monitor_config()
+                interval = 2 # Fixed fast interval
+                lectures = conf.get("lectures", [])
+                
+                if args.lecture:
+                    lectures = [int(args.lecture)]
+                
+                commited_whitelist = conf.get("whitelist", [])
+                raw_blacklist = conf.get("blacklist", [])
+                blacklist = [int(x) for x in raw_blacklist]
+                whitelist = [int(x) for x in commited_whitelist] if commited_whitelist else []
+
+                now = pd.Timestamp.now()
+                now_str = datetime.now().strftime("%H:%M:%S")
+                monitor_state["last_check"] = now_str
+                
+                monitor_state["assignments"] = []
+                
+                for lecture_id in lectures:
+                    try:
+                        sql = "SELECT id, name, week_start, week_end FROM assignments WHERE lecture_id = %s"
+                        assigns = db.execute_query(sql, (lecture_id,), fetch=True) or []
+                        
+                        lec_stats = db.get_assignment_stats(lecture_id)
+                        monitor_state["stats"].update(lec_stats)
+                        
+                        for row in assigns:
+                            aid = row.get('id')
+                            if not aid: continue
+                            aid_int = int(aid)
+                            aname = row.get('name', 'Unknown')
+                            
+                            should_process = False
+                            week_start_str = row.get('week_start')
+                            week_started = True
+                            if week_start_str and str(week_start_str) not in ('', 'None', 'NaT'):
+                                try:
+                                    ws_dt = pd.to_datetime(week_start_str)
+                                    if ws_dt > now:
+                                        week_started = False
+                                except Exception:
+                                    pass
+                            
+                            if args.assignment:
+                                if str(args.assignment) == str(aid):
+                                    should_process = True
+                                else:
+                                    continue
+                            elif args.lecture: 
+                                 if not week_started:
+                                     continue
+                                 end_date_str = row.get('week_end')
+                                 if end_date_str:
+                                     try:
+                                         end_dt = pd.to_datetime(end_date_str).replace(hour=23, minute=59, second=59)
+                                         if end_dt + pd.Timedelta(minutes=5) > now:
+                                             should_process = True
+                                     except:
+                                         pass
+                                 else:
+                                     should_process = True
+                            else:
+                                if aid_int in blacklist:
+                                    continue
+                                if not week_started:
+                                    continue
+                                if aid_int in whitelist:
+                                    should_process = True
+                                else:
+                                    end_date_str = row.get('week_end')
+                                    if end_date_str:
+                                        try:
+                                            end_dt = pd.to_datetime(end_date_str).replace(hour=23, minute=59, second=59)
+                                            if end_dt + pd.Timedelta(minutes=5) > now:
+                                                should_process = True
+                                        except:
+                                            pass
+                                    else:
+                                        should_process = True
+                            
+                            if should_process:
+                                monitor_state["assignments"].append({
+                                    "aid": aid_int,
+                                    "lecture_id": lecture_id,
+                                    "name": aname
+                                })
+                                 
+                    except Exception as e:
+                        pass
+
+                live.update(generate_table(monitor_state))
+                time.sleep(interval)
+                
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                time.sleep(2)
+
+def cmd_monitor(args):
+    from rich.live import Live
+    from datetime import datetime
+    """Infinite loop mode."""
+    is_daemon = getattr(args, 'daemon', False)
+    logger.info(f"Starting Monitor (Dry-Run: {args.dry_run}, Force: {args.force}, Daemon: {is_daemon})")
+    push("채점기 시작했습니다.")
+    monitor_state = {
+        "active_assignment": None,
+        "assignments": [],
+        "stats": {},
+        "last_check": ""
+    }
+    
+    class DummyLive:
+        def __init__(self, *args, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc_val, exc_tb): pass
+        def update(self, *args, **kwargs): pass
+
+    if is_daemon:
+        live_ctx = DummyLive()
+    else:
+        live_ctx = Live(generate_table(monitor_state), refresh_per_second=1)
+    
+    with live_ctx as live:
         while True:
             try:
                 # Reload Config
@@ -728,7 +855,14 @@ def main():
     p_mon.add_argument("--assignment", help="Override Assignment ID")
     p_mon.add_argument("--dry-run", action="store_true", help="Do not update DB scores")
     p_mon.add_argument("--force", action="store_true", help="Force active, fetch all history")
+    p_mon.add_argument("--daemon", action="store_true", help="Run in daemon mode without Rich UI")
     p_mon.set_defaults(func=cmd_monitor)
+    
+    # status
+    p_stat = subparsers.add_parser("status", help="Read-only status dashboard")
+    p_stat.add_argument("--lecture", help="Override Lecture ID")
+    p_stat.add_argument("--assignment", help="Override Assignment ID")
+    p_stat.set_defaults(func=cmd_status)
     
     args = parser.parse_args()
     args.func(args)

@@ -44,7 +44,8 @@ def sanitize_traceback(text: str) -> str:
             skip_next = False
             filtered.append(line)
             
-    return "\n".join(filtered).strip()
+    sanitized_trace = "\n".join(filtered).strip()
+    return sanitized_trace
 
 def sanitize_system_error(error_msg: str) -> tuple[str, bool]:
     """

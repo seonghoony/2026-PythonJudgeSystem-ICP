@@ -413,6 +413,9 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                                          clean_trace = clean_trace[:1000] + "\n... (Truncated)"
     
                                      if clean_trace:
+                                         if "EOFError: EOF when reading a line" in clean_trace:
+                                             comment += "\n\nEOFError는 입력(input)이 더 이상 없을 때 발생합니다.\n불필요한 input() 호출이 과도하게 많거나, 반복문 종료 조건이 잘못되어 입력을 계속 기다리고 있지 않은지 확인해주세요!"
+                                             
                                          comment += f"\nError Logs:\n<pre>\n{clean_trace}\n</pre>\n"
                                          break 
     

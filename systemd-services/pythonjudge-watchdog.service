@@ -1,0 +1,13 @@
+[Unit]
+Description=PythonJudge Watchdog Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/seonghoon/2026-PythonJudgeSystem-ICP
+ExecStart=/home/seonghoon/miniforge3/envs/PythonJudgeSystem/bin/python src/watchdog.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

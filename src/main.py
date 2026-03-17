@@ -35,8 +35,7 @@ from rich.logging import RichHandler
 logging.basicConfig(
     level=logging.INFO,
     format='%(message)s',
-    datefmt='[%Y-%m-%d %X]',
-    handlers=[RichHandler(rich_tracebacks=True, show_path=False)]
+    handlers=[RichHandler(rich_tracebacks=True, show_path=False, show_time=False)]
 )
 logger = logging.getLogger(__name__)
 

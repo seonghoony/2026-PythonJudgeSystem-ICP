@@ -187,7 +187,7 @@
             ← Back to Roster
         </a>
         <div class="nav-brand">
-            {{ lecture_name }} - {{ student_name }}
+            {{ lecture_name }} - {{ student_name }} ({{ student_id }}) - {{ student_dept }}
         </div>
         <div style="width: 100px;"></div>
     </nav>
@@ -196,9 +196,9 @@
         <div class="student-header">
             <img src="/admin/photo/{{ student_id }}" alt="Photo" class="student-photo" onerror="this.src='data:image/svg+xml;base64,...'">
             <div class="student-info">
-                <h1>{{ student_name }}</h1>
+                <h1>{{ student_name }} ({{ student_id }})</h1>
                 <div class="student-meta">
-                    Student ID: {{ student_id }}
+                    {{ student_dept }}
                 </div>
             </div>
         </div>

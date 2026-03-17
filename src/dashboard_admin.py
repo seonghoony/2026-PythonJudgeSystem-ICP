@@ -115,6 +115,7 @@ async def admin_student_summary_view(request: Request, lecture_id: int, student_
     # Fetch Student Info
     student_info = db.get_student_info(student_id)
     student_name = student_info['name'] if student_info else student_id
+    student_dept = student_info['department'] if student_info and 'department' in student_info else "Unknown Department"
     
     # Get lecture name
     sql_lecture = "SELECT name FROM lectures WHERE id = %s"
@@ -143,6 +144,7 @@ async def admin_student_summary_view(request: Request, lecture_id: int, student_
             "lecture_name": lecture_name,
             "student_id": student_id,
             "student_name": student_name,
+            "student_dept": student_dept,
             "grouped_assignments": list(grouped_assignments.values()),
         }
     )
@@ -152,20 +154,38 @@ async def admin_student_view(request: Request, lecture_id: int, student_id: str,
     # Fetch Student Info
     student_info = db.get_student_info(student_id)
     student_name = student_info['name'] if student_info else student_id
+    student_dept = student_info['department'] if student_info and 'department' in student_info else "Unknown Department"
     
     # Fetch Assignment Info
     sql_assign = "SELECT name FROM assignments WHERE id = %s"
     assign_rows = db.execute_query(sql_assign, (assignment_id,), fetch=True)
     assignment_name = assign_rows[0]['name'] if assign_rows else f"Assignment {assignment_id}"
     
-    # Fetch History
-    history = db.get_student_submission_history(assignment_id, student_id)
+    history_raw = db.get_student_submission_history(assignment_id, student_id)
+    history = []
+    for sub in history_raw:
+        failure = None
+        if sub.get('failure_details'):
+            try:
+                failure = json.loads(sub['failure_details'])
+            except:
+                pass
+                
+        history.append({
+            'verdict': sub['verdict'],
+            'score': sub['score'],
+            'max_score': sub['max_score'],
+            'submitted_at': str(sub['submitted_at']),
+            'code': sub['code'],
+            'failure': failure
+        })
     
     return templates.TemplateResponse(
         request=request, name="admin_student.html", context={
             "lecture_id": lecture_id,
             "student_id": student_id,
             "student_name": student_name,
+            "student_dept": student_dept,
             "assignment_id": assignment_id,
             "assignment_name": assignment_name,
             "history": history
@@ -200,6 +220,11 @@ async def admin_feed_view(request: Request, username: str = Depends(log_dashboar
              pass
              
     monitored_lectures = conf.get("lectures", [l['id'] for l in lectures])
+    
+    # Filter for TA access
+    if allowed_lecture_ids is not None:
+        monitored_lectures = [l for l in monitored_lectures if l in allowed_lecture_ids]
+        
     blacklist = set(conf.get("blacklist", []))
     
     monitor_table = []

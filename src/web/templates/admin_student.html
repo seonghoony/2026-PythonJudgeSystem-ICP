@@ -214,7 +214,7 @@
         </a>
         <h1>
             <img src="/admin/photo/{{ student_id }}" onerror="this.src='data:image/svg+xml;base64,...'"> 
-            {{ student_name }}'s {{ assignment_name }}
+            {{ student_name }} ({{ student_id }}) - {{ student_dept }} - {{ assignment_name }}
         </h1>
     </nav>
 
@@ -228,7 +228,7 @@
                     {% elif sub.verdict %} {% set verdict_class = 'badge-fail' %} {% endif %}
                     
                     <li class="submission-item {% if loop.first %}active{% endif %}" 
-                        onclick="showSubmission({{ loop.index0 }}, this)">
+                        data-index="{{ loop.index0 }}">
                         <div class="sub-time" data-ts="{{ sub.submitted_at }}">{{ (sub.submitted_at | string)[:16] }}</div>
                         <div class="sub-meta">
                             <span class="badge {{ verdict_class }}">{{ sub.verdict or 'PENDING' }}</span>
@@ -265,19 +265,11 @@
         </div>
     </div>
 
-    <!-- Data Injection: type=application/json is ignored by the JS linter -->
-    <script id="history-data" type="application/json">[
-        {% for sub in history %}
-        {
-            "verdict": {{ sub.verdict | tojson | safe }},
-            "code": {{ sub.code | tojson | safe }},
-            "failure": {{ (sub.failure_details or 'null') | parse_json | tojson | safe }}
-        }{% if not loop.last %},{% endif %}
-        {% endfor %}
-    ]</script>
+    <!-- Data Injection: hidden div with data-attribute to hide from linters -->
+    <div id="history-container" data-history="{{ history | tojson | forceescape }}" style="display:none;"></div>
 
     <script>
-        const historyData = JSON.parse(document.getElementById('history-data').textContent);
+        const historyData = JSON.parse(document.getElementById('history-container').dataset.history);
 
         function showSubmission(index, element) {
             // Update Active State
@@ -339,6 +331,14 @@
         if(historyData.length > 0) {
             showSubmission(0, document.querySelector('.submission-item'));
         }
+
+        // Add Event Listeners for items
+        document.querySelectorAll('.submission-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const index = parseInt(this.dataset.index);
+                showSubmission(index, this);
+            });
+        });
 
         // Relative timestamps
         function reltime(ts) {

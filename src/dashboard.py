@@ -29,6 +29,66 @@ def load_monitor_config():
     with open(path) as f:
         return yaml.safe_load(f)
 
+@app.get("/api/widget")
+async def widget_api():
+    """Lightweight API for iOS/Android widgets."""
+    from datetime import datetime
+    
+    # 1. Mapping for Section Display
+    sections = {
+        86345: "001",
+        86347: "003"
+    }
+    
+    # 2. Get Global Last Fetch
+    sql_any = "SELECT MAX(last_fetched_at) as last_any FROM assignments"
+    res_any = db.execute_query(sql_any, fetch=True)
+    last_any = res_any[0]['last_any'] if res_any and res_any[0]['last_any'] else None
+    
+    # 3. Get Currently Active Assignments (6 items)
+    sql_active = """
+        SELECT id, name, last_fetched_at, lecture_id 
+        FROM assignments 
+        WHERE (week_start IS NULL OR week_start <= NOW()) 
+          AND (week_end IS NULL OR week_end >= DATE_SUB(NOW(), INTERVAL 7 DAY))
+        ORDER BY last_fetched_at DESC
+        LIMIT 6
+    """
+    active_rows = db.execute_query(sql_active, fetch=True) or []
+    
+    now = datetime.now()
+    active_assignments = []
+    for r in active_rows:
+        lf = r['last_fetched_at']
+        
+        # Calculate "Ns ago"
+        time_str = "-"
+        if lf:
+            diff = (now - lf).total_seconds()
+            if diff < 60:
+                time_str = f"{int(diff)}s"
+            elif diff < 3600:
+                time_str = f"{int(diff // 60)}m"
+            else:
+                time_str = f"{int(diff // 3600)}h"
+
+        # Shorten Name (e.g., "Assignment 3-1—..." -> "3-1")
+        raw_name = r['name']
+        short_name = raw_name.split('—')[0].replace("Assignment ", "").strip()
+        
+        active_assignments.append({
+            "section": sections.get(r['lecture_id'], "???"),
+            "name": short_name,
+            "time_ago": time_str
+        })
+        
+    return {
+        "status": "online",
+        "server_time": now.strftime("%H:%M:%S"),
+        "last_any_fetch": last_any.strftime("%H:%M:%S") if last_any else "Never",
+        "active_assignments": active_assignments
+    }
+
 @app.get("/{lecture_id}", response_class=HTMLResponse)
 async def dashboard_view(request: Request, lecture_id: int):
     # Get stats for this lecture

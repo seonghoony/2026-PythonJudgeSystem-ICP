@@ -177,6 +177,8 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                     logger.info(f"  {sname} ({sid}): No attachment — recording as score 0.")
                     fetched_at = time.strftime('%Y-%m-%d %H:%M:%S')
                     empty_md5 = db.record_file(b"")
+                    attempt_count = db.get_submission_count(int(aid), sid) + 1
+                    comment = f"{attempt_count}번째 시도. 오답입니다. 제출물에 파일이 첨부되지 않았습니다."
                     db.record_submission(
                         assignment_id=int(aid),
                         student_id=sid,
@@ -185,13 +187,13 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                         fetched_at=fetched_at,
                         score=0.0,
                         verdict="WA",
-                        comment="오답입니다. 제출물에 파일이 첨부되지 않았습니다.",
+                        comment=comment,
                         is_force=force,
                         max_score=max_score_val
                     )
                     if grade_url:
                         try:
-                            sb.submit_score(grade_url, 0.0, "오답입니다. 제출물에 파일이 첨부되지 않았습니다.")
+                            sb.submit_score(grade_url, 0.0, comment)
                         except Exception as e:
                             logger.error(f"  Upload Error: {e}")
                             push(f"Snowboard 업로드 오류: {e}")
@@ -200,8 +202,36 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
 
                 content = sb.fetch_submission(href)
                 md5 = db.record_file(content)
-                
                 fetched_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                
+                fname = row.get('첨부파일명', '')
+                is_valid, validation_error = validate_submission(content, fname)
+                
+                if not is_valid:
+                    logger.info(f"  {sname} ({sid}): Validation Failed ({validation_error})")
+                    attempt_count = db.get_submission_count(int(aid), sid) + 1
+                    comment = f"{attempt_count}번째 시도. {validation_error}"
+                    
+                    db.record_submission(
+                        assignment_id=int(aid),
+                        student_id=sid,
+                        file_md5=md5,
+                        submitted_at=ts,
+                        fetched_at=fetched_at,
+                        score=0.0,
+                        verdict="WA",
+                        comment=comment,
+                        is_force=force,
+                        max_score=max_score_val
+                    )
+                    if grade_url:
+                        try:
+                            sb.submit_score(grade_url, 0.0, comment)
+                        except Exception as e:
+                            logger.error(f"  Upload Error: {e}")
+                            push(f"Snowboard 업로드 오류: {e}")
+                    count += 1
+                    continue
                 
                 db.record_submission(
                     assignment_id=int(aid),

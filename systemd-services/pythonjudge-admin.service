@@ -1,8 +1,10 @@
 [Unit]
 Description=Python Judge System Admin Dashboard
-After=network.target
+After=network-online.target docker.service
+Wants=network-online.target
 
 [Service]
+ExecStartPre=/bin/sh -c 'while ! /usr/bin/nc -z localhost 3306; do sleep 1; done'
 Type=simple
 WorkingDirectory=%h/2026-PythonJudgeSystem-ICP
 ExecStart=%h/miniforge3/envs/PythonJudgeSystem/bin/python src/dashboard_admin.py --port 8001

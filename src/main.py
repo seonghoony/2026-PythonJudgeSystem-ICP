@@ -6,6 +6,7 @@ import logging
 import time
 import tempfile
 import pandas as pd
+import signal
 from pathlib import Path
 from typing import Optional, List, Dict
 from dotenv import load_dotenv
@@ -859,6 +860,11 @@ def cmd_monitor(args):
                 time.sleep(10)
 
 def main():
+    def handle_sigterm(signum, frame):
+        raise KeyboardInterrupt()
+    
+    signal.signal(signal.SIGTERM, handle_sigterm)
+
     parser = argparse.ArgumentParser(description="Python Judge System CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
     

@@ -530,3 +530,67 @@ def log_ta_access(username: str, path: str):
     """Log TA dashboard access."""
     sql = "INSERT INTO ta_access (username, path) VALUES (%s, %s)"
     execute_query(sql, (username, path), commit=True)
+
+# --- Exam Attendance Support ---
+
+def search_students_by_id(prefix: str, lecture_id: int) -> List[Dict]:
+    """Search for students in a lecture by ID prefix."""
+    sql = """
+    SELECT s.student_id, s.name, s.department, s.phone_number
+    FROM students s
+    JOIN enrollments e ON s.student_id = e.student_id
+    WHERE e.lecture_id = %s AND s.student_id LIKE %s
+    ORDER BY s.student_id ASC LIMIT 10
+    """
+    return execute_query(sql, (lecture_id, f"{prefix}%"), fetch=True) or []
+
+def get_student_for_exam(student_id: str, lecture_id: int) -> Optional[Dict]:
+    """Get student details for an exam check."""
+    sql = """
+    SELECT s.student_id, s.name, s.department, s.phone_number
+    FROM students s
+    JOIN enrollments e ON s.student_id = e.student_id
+    WHERE e.lecture_id = %s AND s.student_id = %s
+    """
+    rows = execute_query(sql, (lecture_id, student_id), fetch=True)
+    return rows[0] if rows else None
+
+def get_student_attendance(student_id: str, lecture_id: int, exam_type: str) -> Optional[Dict]:
+    """Get check-in/out times for a student."""
+    sql = """
+    SELECT check_in_time, check_out_time, check_in_by, check_out_by
+    FROM exam_attendance
+    WHERE student_id = %s AND lecture_id = %s AND exam_type = %s
+    """
+    rows = execute_query(sql, (student_id, lecture_id, exam_type), fetch=True)
+    return rows[0] if rows else None
+
+def log_exam_check_in(student_id: str, lecture_id: int, exam_type: str, username: str) -> bool:
+    """Check in a student. Returns False if already checked in."""
+    attendance = get_student_attendance(student_id, lecture_id, exam_type)
+    if attendance and attendance['check_in_time']:
+        return False
+        
+    sql = """
+    INSERT INTO exam_attendance (student_id, lecture_id, exam_type, check_in_time, check_in_by)
+    VALUES (%s, %s, %s, NOW(), %s)
+    ON DUPLICATE KEY UPDATE 
+        check_in_time = COALESCE(check_in_time, NOW()),
+        check_in_by = COALESCE(check_in_by, %s)
+    """
+    execute_query(sql, (student_id, lecture_id, exam_type, username, username), commit=True)
+    return True
+
+def log_exam_check_out(student_id: str, lecture_id: int, exam_type: str, username: str) -> bool:
+    """Check out a student. Returns False if already checked out."""
+    attendance = get_student_attendance(student_id, lecture_id, exam_type)
+    if attendance and attendance['check_out_time']:
+        return False
+        
+    sql = """
+    UPDATE exam_attendance
+    SET check_out_time = NOW(), check_out_by = %s
+    WHERE student_id = %s AND lecture_id = %s AND exam_type = %s
+    """
+    rowcount = execute_query(sql, (username, student_id, lecture_id, exam_type), commit=True)
+    return rowcount > 0

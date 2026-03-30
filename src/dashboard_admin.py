@@ -10,9 +10,10 @@ from dotenv import load_dotenv
 
 import uvicorn
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -334,6 +335,60 @@ async def get_photo(student_id: str, _: str = Depends(verify_credentials)):
         return Response(content=transparent_gif, media_type="image/gif")
     
     return Response(content=photo_bytes, media_type="image/jpeg")
+
+class AttendanceRequest(BaseModel):
+    student_id: str
+    lecture_id: int
+    exam_type: str
+
+@app.get("/admin/attendance", response_class=HTMLResponse)
+async def admin_attendance_view(request: Request, username: str = Depends(log_dashboard_access)):
+    sql_lectures = "SELECT id, name FROM lectures ORDER BY id ASC"
+    lectures = db.execute_query(sql_lectures, fetch=True) or []
+    
+    admin_username = os.environ.get("SNOWBOARD_USER", "")
+    if username != admin_username:
+        allowed_lecture_ids = db.get_ta_accessible_lectures(username)
+        lectures = [l for l in lectures if l['id'] in allowed_lecture_ids]
+        
+    return templates.TemplateResponse(
+        request=request, name="admin_attendance.html", context={
+            "lectures": lectures
+        }
+    )
+
+@app.get("/admin/api/attendance/search")
+async def api_attendance_search(q: str, lecture_id: int, _: str = Depends(verify_credentials)):
+    if not q or len(q) < 2:
+        return []
+    students = db.search_students_by_id(q, lecture_id)
+    return students
+
+@app.get("/admin/api/attendance/student_info")
+async def api_attendance_student_info(student_id: str, lecture_id: int, exam_type: str, _: str = Depends(verify_credentials)):
+    student = db.get_student_for_exam(student_id, lecture_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found in this lecture")
+    
+    attendance = db.get_student_attendance(student_id, lecture_id, exam_type)
+    return {
+        "student": student,
+        "attendance": attendance
+    }
+
+@app.post("/admin/api/attendance/check_in")
+async def api_attendance_check_in(req: AttendanceRequest, username: str = Depends(verify_credentials)):
+    success = db.log_exam_check_in(req.student_id, req.lecture_id, req.exam_type, username)
+    if not success:
+        return JSONResponse(status_code=400, content={"message": "이미 처리됨 (Already checked in)"})
+    return {"message": "Success"}
+
+@app.post("/admin/api/attendance/check_out")
+async def api_attendance_check_out(req: AttendanceRequest, username: str = Depends(verify_credentials)):
+    success = db.log_exam_check_out(req.student_id, req.lecture_id, req.exam_type, username)
+    if not success:
+        return JSONResponse(status_code=400, content={"message": "이미 처리됨 (Already checked out or not checked in)"})
+    return {"message": "Success"}
 
 def main():
     parser = argparse.ArgumentParser(description="Start the Admin Dashboard")

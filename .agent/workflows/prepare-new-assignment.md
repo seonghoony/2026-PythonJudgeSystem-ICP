@@ -102,6 +102,11 @@ Create a LaTeX source file at `assignments/solutions_spring26/week_X.tex`.
 - **Pagination:** Insert `\newpage` before each `\section*{...}` starting from the second problem.
 - **Fonts:** English/Math: `TeX Gyre Pagella` via `fontspec`/`unicode-math`. Korean: `\setmainhangulfont{Apple SD Gothic Neo}` via `kotex`.
 - **Colors & Theme:** Import `xcolor` and `tcolorbox`. Define `codegreen`, `codepurple`, `lightgrey`, `textpink`. Use `\newtcblisting{codeblock}` for solutions. Escape Korean comments with `escapeinside={(*@}{@*)}` wrapped in `(*@\textcolor{codegreen}{\# comment}@*)`. Define `\newcommand{\ibox}[1]{\textcolor{blue}{\OldTexttt{#1}}}` and `\newcommand{\obox}[1]{\OldTexttt{#1}}`.
+- **Korean string literals in code blocks:** The `listings` package does NOT colorize multibyte (Korean) characters that appear inside Python string literals — they will render as plain black text instead of `codepurple`. To force the correct purple highlight, every Korean string literal must be wrapped using the escape pattern `(*@\textcolor{codepurple}{\mbox{'한글 문자열'}}@*)`. Important details:
+  - Wrap the **entire** string literal **including** its surrounding quote characters inside `\mbox{...}` so that Korean glyphs are typeset correctly without lstlisting interference.
+  - Inside the `\mbox{...}`, escape literal curly braces from `format()` placeholders as `\{` and `\}` (e.g., `'점수: {}점'` becomes `\mbox{'점수: \{\}점'}`).
+  - Pure-ASCII string literals (e.g., `'YES'`, `'NO'`) do NOT need this treatment — `listings` colorizes them automatically.
+  - Example: `print('최고 평균: {} {:.2f}점'.format(name, avg))` must be written as `print((*@\textcolor{codepurple}{\mbox{'최고 평균: \{\} \{:.2f\}점'}}@*).format(name, avg))` in the `.tex` source.
 - **Example boxes:** `\newtcolorbox{examplebox}` with gray border, sharp corners. Title: `예제 입출력 X (파란색은 사용자 입력)`. User input via `\ibox{...}`, output via `\obox{...}`. Use `~` for trailing spaces.
 
 ## Phase 7: Compile & Final Check (Sequential)

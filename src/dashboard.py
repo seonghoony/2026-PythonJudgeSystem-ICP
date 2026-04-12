@@ -50,7 +50,7 @@ async def widget_api():
         SELECT id, name, last_fetched_at, lecture_id 
         FROM assignments 
         WHERE (week_start IS NULL OR week_start <= NOW()) 
-          AND (week_end IS NULL OR week_end >= DATE_SUB(NOW(), INTERVAL 7 DAY))
+          AND (week_end IS NULL OR week_end >= CURDATE())
         ORDER BY last_fetched_at DESC
         LIMIT 6
     """

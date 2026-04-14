@@ -15,6 +15,7 @@ import concurrent.futures
 import os
 GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 4) - 2))
 GRADING_QUEUE = set()
+MISSING_CONFIG_NOTIFIED = set()
 
 load_dotenv()
 
@@ -272,6 +273,12 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
         config = load_config(assignment_id)
     except FileNotFoundError:
         logger.error(f"Config for {assignment_id} not found. Skipping grading.")
+        if assignment_id not in MISSING_CONFIG_NOTIFIED:
+            pending = db.get_ungraded_submissions(int(assignment_id), limit=1, force=False)
+            if pending:
+                aname = db.get_assignment_name(int(assignment_id)) or f"Assignment {assignment_id}"
+                push(f"⚠️ Ungraded submission found but no judge rule configured.\n{aname} ({assignment_id})\nPlease create assignments/{assignment_id}/config.yaml")
+                MISSING_CONFIG_NOTIFIED.add(assignment_id)
         return
 
     assignment_dir = Path(f"assignments/{assignment_id}").absolute()

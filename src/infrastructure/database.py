@@ -245,6 +245,10 @@ def get_ungraded_submissions(assignment_id: int, limit: int = 100, force: bool =
         """
     return execute_query(sql, (assignment_id, limit), fetch=True)
 
+def get_assignment_name(assignment_id: int) -> Optional[str]:
+    rows = execute_query("SELECT name FROM assignments WHERE id = %s", (assignment_id,), fetch=True)
+    return rows[0]['name'] if rows else None
+
 def get_file_content(md5: str) -> bytes:
     """Fetch file content by MD5."""
     sql = "SELECT content FROM files WHERE md5 = %s"

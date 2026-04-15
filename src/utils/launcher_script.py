@@ -6,16 +6,13 @@ import glob
 import traceback
 from pathlib import Path
 
-# Paths
-SUBMISSION_DIR = Path("/submission") # Mount point for student submission dir
-TARGET_FILE = Path("/Target.py")     # Default single-file mount
-ASSIGNMENT_DIR = Path("/assignment") # Mount point for assignment data
+SUBMISSION_DIR = Path("/submission")
+TARGET_FILE = Path("/Target.py")
+ASSIGNMENT_DIR = Path("/assignment")
 
-# Configuration (passed via Env Vars)
-MODE = os.environ.get("JUDGE_MODE", "standard") # 'standard' or 'special'
+MODE = os.environ.get("JUDGE_MODE", "standard")
 TIMEOUT = int(os.environ.get("JUDGE_TIMEOUT", "5"))
 
-# Student Info (passed via Env Vars from host)
 STUDENT_ID = os.environ.get("STUDENT_ID", "")
 STUDENT_NAME = os.environ.get("STUDENT_NAME", "")
 
@@ -23,8 +20,7 @@ def find_entry_point():
     """Finds the python script to run."""
     if TARGET_FILE.exists():
         return TARGET_FILE
-    
-    # Check submission dir
+
     if SUBMISSION_DIR.exists():
         candidates = ["main.py", "Target.py", "assignment.py"]
         for c in candidates:
@@ -58,32 +54,22 @@ def run_standard_judge(entry_point):
         print(f"[Launcher] Error: {testcases_dir} does not exist.", file=sys.stderr)
         return
 
-    # Support Directory-based (testcases/1/input.txt) AND Flat-file (testcases/input_1.txt)
-    
-    # 1. Directory based
+    # 두 가지 testcase 레이아웃 지원: testcases/1/input.txt (디렉토리) 와 testcases/input_1.txt (평탄)
     cases_dirs = sorted([d for d in testcases_dir.iterdir() if d.is_dir()], key=lambda x: x.name)
-    
-    # 2. Flat file based
-    # Look for input_*.txt
+
     flat_inputs = list(testcases_dir.glob("input_*.txt"))
-    # Map to virtual "case objects"
     flat_cases = []
     for f in flat_inputs:
-        # Expected output: output_{suffix} matching input_{suffix}
-        suffix = f.name[len("input_"):] # e.g. "1.txt"
+        suffix = f.name[len("input_"):]
         out_f = testcases_dir / f"output_{suffix}"
         flat_cases.append({
-            "id": suffix.replace(".txt", ""), # e.g. "1"
+            "id": suffix.replace(".txt", ""),
             "input": f,
             "output": out_f,
             "type": "flat"
         })
-    # Sort flat cases
     flat_cases.sort(key=lambda x: x["id"])
 
-    # Combine (prioritizing dirs if needed, but usually one or the other)
-
-    
     all_cases = []
     for d in cases_dirs:
         all_cases.append({
@@ -108,21 +94,17 @@ def run_standard_judge(entry_point):
         }
         
         try:
-            # Read input
             input_data = input_file.read_text()
-            
-            # Run Subprocess
-            # Logic: If run_before.py exists, we must run it in the SAME process as the student code.
-            # We create a temporary wrapper script to achieve this.
+
+            # run_before.py가 학생 코드와 같은 프로세스에서 실행되도록 wrapper로 묶어 한 번에 exec.
             pre_script = ASSIGNMENT_DIR / "run_before.py"
             actual_entry = entry_point
-            
+
             if pre_script.exists():
                 wrapper_content = f"""
 import sys
 from pathlib import Path
 
-# 1. Execute run_before.py
 try:
     with open("{pre_script}", "r") as f:
         exec(f.read(), globals())
@@ -130,15 +112,12 @@ except Exception as e:
     print(f"Error in run_before.py: {{e}}", file=sys.stderr)
     sys.exit(1)
 
-# 2. Execute Student Script
-# We set __name__ to __main__ to mimic direct execution
 try:
     sys.path.insert(0, "{entry_point.parent}")
     with open("{entry_point}", "r") as f:
         code = compile(f.read(), "{entry_point}", 'exec')
         exec(code, globals())
 except Exception as e:
-    # Print runtime error to stderr so launcher catches it
     print(f"Runtime Error: {{e}}", file=sys.stderr)
     import traceback
     traceback.print_exc()
@@ -154,7 +133,7 @@ except Exception as e:
                 capture_output=True,
                 text=True,
                 timeout=TIMEOUT,
-                cwd=str(entry_point.parent), # Run in submission dir
+                cwd=str(entry_point.parent),
                 env={**os.environ, "STUDENT_ID": STUDENT_ID, "STUDENT_NAME": STUDENT_NAME}
             )
             
@@ -164,13 +143,10 @@ except Exception as e:
             
             if proc.returncode != 0:
                 res["message"] = "Runtime Error"
-                # Check for common keywords in stderr
                 if "RecursionError" in proc.stderr:
                     res["message"] = "Recursion Error"
             else:
-                # Basic output comparison (Launcher does exact match default)
-                # The HOST logic can override this with run_after.py, 
-                # but the launcher needs to report stdout regardless.
+                # 호스트의 run_after.py가 별도 검증할 수 있지만, launcher는 우선 정확 일치로 판정한다.
                 expected = output_file.read_text() if output_file.exists() else ""
                 if proc.stdout.strip() == expected.strip():
                     res["is_correct"] = True
@@ -179,22 +155,20 @@ except Exception as e:
 
         except subprocess.TimeoutExpired:
             res["message"] = "Time Limit Exceeded"
-            res["exit_code"] = 124 # Common timeout code
+            res["exit_code"] = 124
         except Exception as e:
             res["message"] = f"System Error: {str(e)}"
             res["exit_code"] = -1
             
         results.append(res)
         
-    # Print results as JSON to stdout for host to parse
-    # We use a robust delimiter to avoid student stdout interference if logic changes
+    # 학생의 stdout과 섞이지 않도록 고유한 delimiter로 감싸서 호스트가 파싱한다.
     print("___JUDGE_RESULT_START___")
     print(json.dumps(results))
     print("___JUDGE_RESULT_END___")
 
 def run_special_judge(entry_point):
-    """Runs the grader script."""
-    # Priority: /evaluator.py -> /grader.py -> /assignment/evaluator.py -> /assignment/grader.py
+    """Runs the grader script. 우선순위: /evaluator.py -> /grader.py -> /assignment/evaluator.py -> /assignment/grader.py"""
     candidates = [
         Path("/evaluator.py"),
         Path("/grader.py"),
@@ -212,30 +186,24 @@ def run_special_judge(entry_point):
          print(f"[Launcher] Error: evaluator.py (or grader.py) not found.", file=sys.stderr)
          return
          
-    # Special judge usually imports the student code.
-    # We add submission dir to path so grader can import it
-    # We must propagate this to the subprocess environment
+    # special judge의 grader가 학생 모듈을 import 할 수 있도록 PYTHONPATH에 submission 디렉토리를 주입.
     env = os.environ.copy()
     env["PYTHONPATH"] = str(entry_point.parent) + os.pathsep + env.get("PYTHONPATH", "")
-    
+
     try:
-        # We capture output to wrap it in markers
         res = subprocess.run(
             [sys.executable, str(grader_script)],
             timeout=TIMEOUT,
             capture_output=True,
             text=True,
             env=env,
-            cwd=str(entry_point.parent) # Also set CWD for file ops
+            cwd=str(entry_point.parent)
         )
-        
-        # Determine success/failure based on exit code or output
-        # We wrap the stdout in markers for the host to parse
+
         print("___JUDGE_RESULT_START___")
 
         if res.returncode != 0:
             if not res.stdout.strip():
-                 # Generate a JSON error if script crashed without output
                  print(json.dumps([{"message": f"Grader Crashed (Exit {res.returncode})", "stderr": res.stderr, "is_correct": False, "exit_code": res.returncode}]))
             else:
                  print(res.stdout)

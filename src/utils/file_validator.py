@@ -9,17 +9,14 @@ def validate_submission(content: bytes, filename: str = "") -> Tuple[bool, Optio
     If is_valid is False, error_comment contains Korean feedback for the student.
     """
 
-    # 1. Empty file
     if len(content) == 0:
         return False, "오답입니다. 파일이 비어 있습니다."
 
-    # 2. Wrong extension (if filename is available)
     if filename:
         ext = Path(filename).suffix.lower()
         if ext and ext != ".py":
             return False, "오답입니다. 파이썬 스크립트 확장자(.py)가 아닙니다."
 
-    # 3. ipynb disguised as .py
     stripped = content.lstrip()
     stripped_end = content.rstrip()
     if (stripped.startswith(b"{") and
@@ -31,7 +28,6 @@ def validate_submission(content: bytes, filename: str = "") -> Tuple[bool, Optio
             "코드 셀에 작성한 파이썬 코드를 갈무리하여 파이썬 스크립트로 제출하세요."
         )
 
-    # 4. Binary check (null bytes)
     if b'\x00' in content[:1024]:
         return False, "오답입니다. 파이썬 문법으로 작성된 텍스트 파일(.py)이 아닌 이미지 등의 파일이 제출되었습니다."
 

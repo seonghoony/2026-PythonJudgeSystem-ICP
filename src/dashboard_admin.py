@@ -65,7 +65,6 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
 
 def log_dashboard_access(request: Request, username: str = Depends(verify_credentials)):
     """Log access for all users (Admin and TAs) to the dashboard."""
-    # Don't log static assets or API polling closely, focus on main views
     path = request.url.path
     db.log_ta_access(username, path)
     return username
@@ -74,7 +73,7 @@ def verify_lecture_access(request: Request, lecture_id: int, username: str = Dep
     """Verify that the user has access to the specified lecture, logging access first."""
     admin_username = os.environ.get("SNOWBOARD_USER", "")
     if username == admin_username:
-        return username  # Admin has full access
+        return username
         
     if not db.check_ta_lecture_access(username, lecture_id):
         raise HTTPException(

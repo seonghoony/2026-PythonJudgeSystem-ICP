@@ -48,9 +48,8 @@ class SpecialJudge(JudgeEngine):
                 
                 if start_marker in stdout and end_marker in stdout:
                     json_str = stdout.split(start_marker)[1].split(end_marker)[0]
-                    # Expected format: List[TestCaseResult] dicts
-                    results_data = json.loads(json_str) 
-                    
+                    results_data = json.loads(json_str)
+
                     total_score = 0
                     for res in results_data:
                         tc = TestCaseResult(
@@ -62,17 +61,15 @@ class SpecialJudge(JudgeEngine):
                             message=res.get("message", "")
                         )
                         eval_result.results.append(tc)
-                        
-                    # Final Score Calculation
+
                     if eval_result.results:
                         correct_count = sum(1 for r in eval_result.results if r.is_correct)
                         total_count = len(eval_result.results)
-                        
+
                         policy = self.config.grading.policy
                         if policy == "partial":
                             eval_result.total_score = correct_count / total_count
                         else:
-                            # Default: all_or_nothing
                             eval_result.total_score = 1.0 if correct_count == total_count else 0.0
                     else:
                         eval_result.total_score = 0.0

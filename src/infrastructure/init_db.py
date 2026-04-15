@@ -15,7 +15,6 @@ DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
 DB_NAME = os.environ.get("DB_NAME", "PythonJudgeSystem")
 
 DDL_STATEMENTS = [
-    # 1. Lectures Table
     """
     CREATE TABLE IF NOT EXISTS lectures (
         id BIGINT PRIMARY KEY COMMENT 'Snowboard Lecture ID',
@@ -23,8 +22,7 @@ DDL_STATEMENTS = [
         last_fetched_at DATETIME DEFAULT NULL COMMENT 'Last time submissions were fetched'
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
-    
-    # 2. Students Table (Global list of students)
+
     """
     CREATE TABLE IF NOT EXISTS students (
         student_id VARCHAR(50) PRIMARY KEY COMMENT 'University Student ID',
@@ -33,8 +31,7 @@ DDL_STATEMENTS = [
         photo MEDIUMBLOB DEFAULT NULL COMMENT 'Student Photo'
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
-    
-    # 3. Enrollments Table (M:N Students <-> Lectures)
+
     """
     CREATE TABLE IF NOT EXISTS enrollments (
         lecture_id BIGINT NOT NULL,
@@ -45,7 +42,6 @@ DDL_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
 
-    # 4. Assignments Table
     """
     CREATE TABLE IF NOT EXISTS assignments (
         id BIGINT PRIMARY KEY COMMENT 'Snowboard Assignment ID',
@@ -58,7 +54,6 @@ DDL_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
 
-    # 5. Files Table (Content Addressable Storage)
     """
     CREATE TABLE IF NOT EXISTS files (
         md5 CHAR(32) PRIMARY KEY,
@@ -66,33 +61,31 @@ DDL_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
 
-    # 6. Submissions Table
     """
     CREATE TABLE IF NOT EXISTS submissions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         assignment_id BIGINT NOT NULL,
         student_id VARCHAR(50) NOT NULL,
         file_md5 CHAR(32) NOT NULL,
-        
+
         submitted_at DATETIME NOT NULL COMMENT 'Submission time from Snowboard',
         fetched_at DATETIME NOT NULL COMMENT 'When we crawled it',
-        
+
         is_latest BOOLEAN DEFAULT TRUE COMMENT 'Helper to find latest submission per student/assign',
-        
+
         max_score FLOAT DEFAULT 100.0,
         score FLOAT DEFAULT NULL,
         verdict VARCHAR(50) DEFAULT NULL,
         comment TEXT DEFAULT NULL,
         failure_details TEXT DEFAULT NULL,
         is_force BOOLEAN DEFAULT FALSE,
-        
+
         FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
         FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
         FOREIGN KEY (file_md5) REFERENCES files(md5)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
-    
-    # 7. Code Similarity Table (Plagiarism)
+
     """
     CREATE TABLE IF NOT EXISTS code_similarity (
         md5_a CHAR(32) NOT NULL,
@@ -105,7 +98,6 @@ DDL_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
 
-    # 8. TA Accounts Table
     """
     CREATE TABLE IF NOT EXISTS ta_accounts (
         username VARCHAR(50) PRIMARY KEY,
@@ -114,7 +106,6 @@ DDL_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
 
-    # 9. TA Access Log Table
     """
     CREATE TABLE IF NOT EXISTS ta_access (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -123,8 +114,7 @@ DDL_STATEMENTS = [
         path VARCHAR(255) NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
-    
-    # 10. TA Lecture Access Table
+
     """
     CREATE TABLE IF NOT EXISTS ta_lecture_access (
         username VARCHAR(50) NOT NULL,

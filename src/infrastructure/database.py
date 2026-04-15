@@ -6,10 +6,8 @@ from pathlib import Path
 from src.utils.hash import calculate_md5
 from typing import Optional, Union, Tuple, Dict, Any, List
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Constants (Defaults can be overridden by env)
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_USER = os.environ.get("DB_USER", "root")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
@@ -77,14 +75,12 @@ def get_lecture_fetch_time(lecture_id: int):
 
 def ensure_student(student_id: str, name: str, lecture_id: int):
     """Upsert student and enrollment."""
-    # 1. Ensure Student
     sql_student = """
     INSERT INTO students (student_id, name) VALUES (%s, %s)
     ON DUPLICATE KEY UPDATE name = VALUES(name)
     """
     execute_query(sql_student, (student_id, name), commit=True)
-    
-    # 2. Ensure Enrollment
+
     sql_enroll = """
     INSERT IGNORE INTO enrollments (lecture_id, student_id) VALUES (%s, %s)
     """
@@ -142,16 +138,14 @@ def record_submission(
         max_score: float = 100.0
 ):
     """Record a submission."""
-    # 1. If this is marked as latest, unset previous latest for this student/assignment
     if is_latest:
         sql_update = """
-        UPDATE submissions 
-        SET is_latest = 0 
+        UPDATE submissions
+        SET is_latest = 0
         WHERE assignment_id = %s AND student_id = %s
         """
         execute_query(sql_update, (assignment_id, student_id), commit=True)
-    
-    # 2. Insert new submission
+
     sql = """
     INSERT INTO submissions (
         assignment_id, student_id, file_md5, submitted_at, fetched_at, 
@@ -297,9 +291,8 @@ def get_assignment_stats(lecture_id: int) -> dict:
     GROUP BY s.assignment_id
     """
     rows = execute_query(sql, (lecture_id,), fetch=True)
-    
-    # We also want to include assignments that have 0 submissions but exist in the DB.
-    # So let's do a secondary query to get all assignments for the lecture.
+
+    # 제출이 0건인 assignment도 결과에 포함시키기 위한 보조 쿼리.
     sql_all = "SELECT id, last_fetched_at FROM assignments WHERE lecture_id = %s"
     all_assigns = execute_query(sql_all, (lecture_id,), fetch=True)
     
@@ -348,7 +341,6 @@ def get_admin_lecture_students(lecture_id: int) -> List[Dict]:
     Fetch all students in a lecture, along with their assignment summary.
     Summary is a list of dicts: {'assignment_id': int, 'name': str, 'verdict': str, 'attempts': int}
     """
-    # 1. Get enrolled students
     sql_students = """
     SELECT s.student_id, s.name, s.department
     FROM students s
@@ -357,17 +349,15 @@ def get_admin_lecture_students(lecture_id: int) -> List[Dict]:
     ORDER BY s.student_id
     """
     students = execute_query(sql_students, (lecture_id,), fetch=True) or []
-    
-    # 2. Get assignments for this lecture
+
     sql_assignments = """
     SELECT id as assignment_id, name
-    FROM assignments 
-    WHERE lecture_id = %s 
+    FROM assignments
+    WHERE lecture_id = %s
     ORDER BY id ASC
     """
     assignments = execute_query(sql_assignments, (lecture_id,), fetch=True) or []
-    
-    # 3. Get all latest submissions for these students + assignments
+
     sql_submissions = """
     SELECT s.student_id, s.assignment_id, s.verdict, 
            (SELECT COUNT(*) FROM submissions sub 
@@ -377,15 +367,13 @@ def get_admin_lecture_students(lecture_id: int) -> List[Dict]:
     WHERE a.lecture_id = %s AND s.is_latest = 1
     """
     subs = execute_query(sql_submissions, (lecture_id,), fetch=True) or []
-    
-    # Group submissions by student_id
+
     sub_map = {}
     for sub in subs:
         if sub['student_id'] not in sub_map:
             sub_map[sub['student_id']] = {}
         sub_map[sub['student_id']][sub['assignment_id']] = sub
-        
-    # Build final result map
+
     for student in students:
         sid = student['student_id']
         student['assignments'] = []
@@ -422,8 +410,7 @@ def get_student_submission_history(assignment_id: int, student_id: str) -> List[
     ORDER BY s.submitted_at DESC
     """
     rows = execute_query(sql, (assignment_id, student_id), fetch=True) or []
-    
-    # Decode MEDIUMBLOB / JSON fields to string
+
     for r in rows:
         if isinstance(r.get('code'), (bytes, bytearray)):
             try:
@@ -435,10 +422,10 @@ def get_student_submission_history(assignment_id: int, student_id: str) -> List[
                     r['code'] = "<Binary Data or Decode Error>"
         elif r.get('code') is not None:
             r['code'] = str(r['code'])
-            
+
         if isinstance(r.get('failure_details'), (bytes, bytearray)):
             r['failure_details'] = r['failure_details'].decode('utf-8')
-            
+
     return rows
 
 def get_student_photo(student_id: str) -> Optional[bytes]:
@@ -465,8 +452,7 @@ def get_student_all_submissions(student_id: str, lecture_id: int) -> List[Dict]:
     ORDER BY s.assignment_id DESC, s.submitted_at DESC
     """
     rows = execute_query(sql, (student_id, lecture_id), fetch=True) or []
-    
-    # Decode MEDIUMBLOB / JSON fields to string
+
     for r in rows:
         if isinstance(r.get('code'), (bytes, bytearray)):
             try:
@@ -512,7 +498,7 @@ def get_global_feed(limit: int = 50, allowed_lecture_ids: Optional[List[int]] = 
     
     if allowed_lecture_ids is not None:
         if len(allowed_lecture_ids) == 0:
-            return []  # No accessible lectures
+            return []
         placeholders = ', '.join(['%s'] * len(allowed_lecture_ids))
         sql += f" WHERE a.lecture_id IN ({placeholders})"
         params.extend(allowed_lecture_ids)

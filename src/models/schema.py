@@ -3,8 +3,8 @@ from pydantic import BaseModel, Field
 
 class Resources(BaseModel):
     cpu_count: int = 1
-    memory_limit: str = "128m"  # e.g. "128m"
-    timeout: int = 5            # seconds
+    memory_limit: str = "128m"
+    timeout: int = 5
     network_disabled: bool = True
 
 class BuildOptions(BaseModel):
@@ -40,10 +40,10 @@ class TestCaseResult(BaseModel):
     stderr: str = ""
     exit_code: int = 0
     time_elapsed: float = 0.0
-    memory_used: int = 0  # To be implemented if we can parse docker stats
-    message: str = ""     # User feedback (TLE, RTE, WA)
-    expected_output: Optional[str] = None # For debugging WA
-    input_data: Optional[str] = None # For debugging WA/RTE
+    memory_used: int = 0
+    message: str = ""
+    expected_output: Optional[str] = None
+    input_data: Optional[str] = None
 
 class EvaluationResult(BaseModel):
     submission_id: str

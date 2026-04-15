@@ -11,12 +11,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-# Fix Import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.infrastructure import database as db
 
-# Load Env
 load_dotenv()
 
 app = FastAPI(title="PythonJudgeSystem Dashboard")
@@ -33,19 +31,16 @@ def load_monitor_config():
 async def widget_api():
     """Lightweight API for iOS/Android widgets."""
     from datetime import datetime
-    
-    # 1. Mapping for Section Display
+
     sections = {
         86345: "001",
         86347: "003"
     }
-    
-    # 2. Get Global Last Fetch
+
     sql_any = "SELECT MAX(last_fetched_at) as last_any FROM assignments"
     res_any = db.execute_query(sql_any, fetch=True)
     last_any = res_any[0]['last_any'] if res_any and res_any[0]['last_any'] else None
-    
-    # 3. Get Currently Active Assignments (6 items)
+
     sql_active = """
         SELECT id, name, last_fetched_at, lecture_id 
         FROM assignments 
@@ -60,8 +55,7 @@ async def widget_api():
     active_assignments = []
     for r in active_rows:
         lf = r['last_fetched_at']
-        
-        # Calculate "Ns ago"
+
         time_str = "-"
         if lf:
             diff = (now - lf).total_seconds()
@@ -72,7 +66,7 @@ async def widget_api():
             else:
                 time_str = f"{int(diff // 3600)}h"
 
-        # Shorten Name (e.g., "Assignment 3-1—..." -> "3-1")
+        # 위젯 표시용 단축명: "Assignment 3-1—..." -> "3-1"
         raw_name = r['name']
         short_name = raw_name.split('—')[0].replace("Assignment ", "").strip()
         
@@ -91,14 +85,8 @@ async def widget_api():
 
 @app.get("/{lecture_id}", response_class=HTMLResponse)
 async def dashboard_view(request: Request, lecture_id: int):
-    # Get stats for this lecture
     stats = db.get_assignment_stats(lecture_id)
-    
-    # We might want to enrich this with assignment details (like name) from the db
-    # db.get_assignment_stats returns { assignment_id: { 'uniq_students': X, ... } }
-    # To get assignment names, we should fetch them explicitly or join them.
-    # Fortunately, we can query assignments list directly.
-    
+
     assignments = []
     
     sql = "SELECT id, name, last_fetched_at FROM assignments WHERE lecture_id = %s AND (week_start IS NULL OR week_start <= NOW()) ORDER BY id ASC"
@@ -124,8 +112,7 @@ async def dashboard_view(request: Request, lecture_id: int):
             "submissions": subs,
             "ac_count": acs
         })
-        
-    # Get the lecture name
+
     sql_lecture = "SELECT name FROM lectures WHERE id = %s"
     lecture_rows = db.execute_query(sql_lecture, (lecture_id,), fetch=True)
     lecture_name = lecture_rows[0]['name'] if lecture_rows else f"Lecture {lecture_id}"
@@ -136,15 +123,12 @@ async def dashboard_view(request: Request, lecture_id: int):
 
 @app.get("/{lecture_id}/{assignment_id}", response_class=HTMLResponse)
 async def cdf_view(request: Request, lecture_id: int, assignment_id: int):
-    # We need the assignment details
     sql = "SELECT name FROM assignments WHERE id = %s"
     rows = db.execute_query(sql, (assignment_id,), fetch=True)
     assignment_name = rows[0]['name'] if rows else f"Assignment {assignment_id}"
-    
-    # Fetch CDF Data
+
     cdf_data = db.get_cdf_data(assignment_id)
-    
-    # Process for the graph
+
     import json
     dates = []
     counts = []

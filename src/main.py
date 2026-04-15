@@ -107,12 +107,11 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
         week_end = row.get('week_end') if pd.notna(row.get('week_end')) else None
         
         if not aid: continue
-         
-        # Filter by assignment if requested
+
         if assignment_id and str(assignment_id) != str(aid):
             continue
-        
-        # Skip outdated assignments (past due + 5 min grace period), unless force=True
+
+        # 마감 후 5분 유예가 지난 과제는 force=False면 스킵 (재제출 차단 후의 fetch 비용 절약).
         if not force and '종료 일시' in row.index and row['종료 일시'] != '-':
             try:
                 due = pd.to_datetime(row['종료 일시'])
@@ -303,16 +302,14 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
     
     count = 0
     def process_submission(i, sub):
-            sid = sub['id'] # submission ID from DB
-            student_id = sub['student_id'] # student ID
+            sid = sub['id']
+            student_id = sub['student_id']
             md5 = sub['file_md5']
-    
-            # Override Grade URL if fresh
+
             grade_url = None
             if url_map and student_id in url_map:
                 grade_url = url_map[student_id]
-    
-            # Get Max Score from sub (default 100.0)
+
             max_score = float(sub.get('max_score', 100.0))
     
             student_info = db.get_student_info(student_id)
@@ -335,8 +332,7 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                     logger.info(f"  -> WA (Validation Failed: {validation_error}) {'[DRY RUN]' if dry_run else ''}")
                     if not dry_run:
                         db.update_submission_result(sid, 0.0, "WA", comment)
-    
-                        # Upload to Snowboard
+
                         if sb and grade_url:
                             try:
                                 sb.submit_score(grade_url, 0.0, comment)
@@ -388,34 +384,28 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                     else:
                         comment = f"{attempt_count}번째 시도, 오답입니다."
     
-                        # Append exception/error details if available
                         for res in result.results:
                              if not res.is_correct:
-                                 # Capture first failure details for DB (Admin Debug)
+                                 # 첫 실패 케이스만 DB에 디테일 저장 (Admin debug용).
                                  if not failure_details_json:
                                      import json
                                      details = {
                                          "test_case_id": res.test_case_id,
                                          "input": getattr(res, "input_data", None),
                                          "actual_output": res.stdout,
-                                         "expected_output": getattr(res, "expected_output", None), # From StandardJudge
+                                         "expected_output": getattr(res, "expected_output", None),
                                          "traceback": res.stderr,
                                          "message": res.message
                                      }
                                      failure_details_json = json.dumps(details, ensure_ascii=False)
-    
-                                 # Comment Logic (Student Feedback)
-                                 # Prioritize stderr for Python tracebacks (StandardJudge)
-                                 # Only log if stderr is present (indicates Runtime Error / Exception)
-                                 # We ignore 'message' here (e.g. "Wrong Answer", "Time Limit Exceeded") 
-    
+
+                                 # 학생 피드백은 stderr가 있을 때만 traceback을 보여주고, 'Wrong Answer'/'TLE' 같은 message는 따로 노출하지 않는다.
                                  raw_error = (res.stderr or "").strip()
-    
+
                                  if raw_error:
                                      from src.utils.sanitizer import sanitize_traceback
                                      clean_trace = sanitize_traceback(raw_error)
-    
-                                     # Limit length to avoid massive comments
+
                                      if len(clean_trace) > 1000:
                                          clean_trace = clean_trace[:1000] + "\n... (Truncated)"
     
@@ -436,9 +426,8 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                     logger.info(f"  -> {current_verdict} (Score: {result.total_score:.2f}, Attempt: {attempt_count}) {'[DRY RUN]' if dry_run else ''}")
     
                     if not dry_run:
-                        # Update DB (Store Actual Score: ratio * max_score)
                         final_score_points = result.total_score * max_score
-    
+
                         db.update_submission_result(
                             sid, 
                             final_score_points, 
@@ -454,7 +443,7 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                                 ok = sb.submit_score(grade_url, upload_score, comment)
                                 if ok:
                                     logger.info("  Upload Success.")
-                                    # Lock submission if student achieved max score (skip for professor)
+                                    # 만점 학생의 제출은 잠가서 추가 제출을 방지. 단, 교수 본인 계정은 제외.
                                     if upload_score >= max_score and student_id != os.environ.get("SNOWBOARD_USER", ""):
                                         lock_url = (lock_map or {}).get(student_id)
                                         if lock_url:
@@ -492,14 +481,12 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
 def run_loop_body(lecture_id: int, assignment_id: int, dry_run: bool, force: bool, sb: Optional[SnowBoard] = None):
     """Core logic for one iteration of monitor/oneshot."""
     try:
-        # Determine filter: force -> 'submitted', else 'requiregrading'
         filter_target = 'submitted' if force else 'requiregrading'
-        
+
         logger.debug(f"Processing Assignment {assignment_id} (Lecture {lecture_id}) [Force={force}]")
-            
+
         fresh_urls, lock_urls = run_fetch(lecture_id, assignment_id, filter_status=filter_target, force=force, sb=sb)
-        
-        # 2. Grade & Upload
+
         run_grade(str(assignment_id), dry_run=dry_run, force=force, url_map=fresh_urls, lock_map=lock_urls, sb=sb)
     except Exception as e:
         logger.error(f"Error processing assignment {assignment_id}: {e}")
@@ -508,8 +495,7 @@ def cmd_evaluate(args):
     try:
         submission_path = Path(args.submission).absolute()
         result = run_evaluate(args.assignment, submission_path, args.student, args.build)
-        
-        # Output
+
         print("\n" + "="*40)
         print(f"Total Score: {result.total_score}")
         if result.system_error:
@@ -534,8 +520,8 @@ def cmd_oneshot(args):
     from rich.status import Status
     """Single run mode."""
     logger.info(f"Starting Oneshot (Dry-Run: {args.dry_run}, Force: {args.force})")
-    
-    # Unified SnowBoard Instance
+
+    # oneshot에서는 fetch와 grade가 같은 SnowBoard 세션을 공유하도록 미리 한 번만 로그인.
     sb = None
     if not args.dry_run:
         try:
@@ -543,19 +529,13 @@ def cmd_oneshot(args):
         except Exception as e:
              logger.error(f"Failed to login to Snowboard: {e}")
              if not args.dry_run:
-                 return # Cannot run without login if not dry run (strictly speaking fetching needs login too)
+                 return
     else:
-        # Check if dry-run still needs fetching? Yes. fetch needs SnowBoard.
-        # So dry-run primarily means "Don't Upload" and "Don't Save DB"?
-        # Actually fetch needs login anyway.
         try:
              sb = SnowBoard()
         except:
              pass
-             
-    # Actually, run_fetch WILL initialize its own SB if we pass None.
-    # But for oneshot we want unified.
-    
+
     with Status(f"[bold green]Running oneshot for Assign {args.assignment} / Lec {args.lecture}...", spinner="dots"):
         run_loop_body(int(args.lecture), int(args.assignment), args.dry_run, args.force, sb=sb)
 
@@ -601,7 +581,7 @@ def cmd_status(args):
     from rich.live import Live
     from datetime import datetime
     """Status display mode (read-only monitor loop)."""
-    # Disable most logging to avoid drawing warnings over the rich UI
+    # rich Live UI 위에 로그가 덮어 그려지지 않도록 로그 레벨을 ERROR로 강제.
     logging.getLogger().setLevel(logging.ERROR)
     
     monitor_state = {
@@ -615,7 +595,7 @@ def cmd_status(args):
         while True:
             try:
                 conf = load_monitor_config()
-                interval = 2 # Fixed fast interval
+                interval = 2
                 lectures = conf.get("lectures", [])
                 
                 if args.lecture:
@@ -740,21 +720,18 @@ def cmd_monitor(args):
     with live_ctx as live:
         while True:
             try:
-                # Reload Config
                 conf = load_monitor_config()
                 interval = conf.get("refresh_interval", 60)
                 lectures = conf.get("lectures", [])
-                
-                # Explicit overrides
+
                 if args.lecture:
-                    lectures = [int(args.lecture)] # Just check this lecture
-                
+                    lectures = [int(args.lecture)]
+
                 commited_whitelist = conf.get("whitelist", [])
                 raw_blacklist = conf.get("blacklist", [])
                 blacklist = [int(x) for x in raw_blacklist]
                 whitelist = [int(x) for x in commited_whitelist] if commited_whitelist else []
 
-                # Unified SnowBoard for this iteration
                 sb = SnowBoard()
                 now = pd.Timestamp.now()
                 now_str = datetime.now().strftime("%H:%M:%S")
@@ -874,24 +851,21 @@ def main():
 
     parser = argparse.ArgumentParser(description="Python Judge System CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    
-    # eval
+
     p_eval = subparsers.add_parser("eval", help="Evaluate local file")
     p_eval.add_argument("--assignment", required=True)
     p_eval.add_argument("--submission", required=True)
     p_eval.add_argument("--student", default="test_student")
     p_eval.add_argument("--build", action="store_true")
     p_eval.set_defaults(func=cmd_evaluate)
-    
-    # oneshot
+
     p_one = subparsers.add_parser("oneshot", help="Single run fetch & grade")
     p_one.add_argument("--lecture", required=True)
     p_one.add_argument("--assignment", required=True)
     p_one.add_argument("--dry-run", action="store_true", help="Do not update DB")
     p_one.add_argument("--force", action="store_true", help="Force active, fetch all history")
     p_one.set_defaults(func=cmd_oneshot)
-    
-    # monitor
+
     p_mon = subparsers.add_parser("monitor", help="Continuous monitoring loop")
     p_mon.add_argument("--lecture", help="Override Lecture ID")
     p_mon.add_argument("--assignment", help="Override Assignment ID")
@@ -899,8 +873,7 @@ def main():
     p_mon.add_argument("--force", action="store_true", help="Force active, fetch all history")
     p_mon.add_argument("--daemon", action="store_true", help="Run in daemon mode without Rich UI")
     p_mon.set_defaults(func=cmd_monitor)
-    
-    # status
+
     p_stat = subparsers.add_parser("status", help="Read-only status dashboard")
     p_stat.add_argument("--lecture", help="Override Lecture ID")
     p_stat.add_argument("--assignment", help="Override Assignment ID")

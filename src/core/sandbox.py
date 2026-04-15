@@ -52,7 +52,7 @@ class DockerSandbox:
                     if existing_labels and existing_labels.get('build_hash') == build_hash:
                         needs_build = False
             except Exception:
-                pass # JSON parse error or other, force build
+                pass
         
         if not needs_build:
             return image_tag
@@ -62,8 +62,7 @@ class DockerSandbox:
         with tempfile.TemporaryDirectory() as build_ctx:
             ctx_path = Path(build_ctx)
             (ctx_path / "Dockerfile").write_text(dockerfile_content)
-            
-            # Add label to build command
+
             cmd = f"docker build -t {image_tag} --label build_hash={build_hash} {ctx_path}"
             
             res = DockerSandbox._run_cmd(cmd, timeout=600)
@@ -98,7 +97,7 @@ class DockerSandbox:
         mount_cmd += f"-v {assignment_dir.absolute()}:/assignment:ro "
         
         launcher_path = Path("src/utils/launcher_script.py").absolute()
-        mount_cmd += f"-v {launcher_path}:/launcher.py:ro " 
+        mount_cmd += f"-v {launcher_path}:/launcher.py:ro "
         
         net_flag = "--net none" if resources.network_disabled else ""
         
@@ -121,8 +120,6 @@ class DockerSandbox:
         
         try:
             res = DockerSandbox._run_cmd(cmd, timeout=resources.timeout + 5)
-            if res.returncode != 0:
-                pass # Caller handles partial results or we allow nonzero exit (e.g. RTE)
             return {
                 "stdout": res.stdout,
                 "stderr": res.stderr,

@@ -27,8 +27,8 @@ def load_monitor_config():
 
 def run_watchdog():
     logger.info("Starting PythonJudgeSystem Watchdog...")
-    
-    # Track the last time we sent an alert to avoid spamming
+
+    # 같은 과제에 대해 30분 이내 중복 알림을 막기 위해 마지막 발송 시각을 보관.
     last_alert_time = {}
     ALERT_COOLDOWN_MINUTES = 30
     STALL_THRESHOLD_MINUTES = 5
@@ -48,7 +48,6 @@ def run_watchdog():
             stalled_assignments = []
             
             for lecture_id in lectures:
-                # Query assignments for this lecture from DB
                 sql = "SELECT id, name, week_start, week_end, last_fetched_at FROM assignments WHERE lecture_id = %s"
                 assigns = db.execute_query(sql, (lecture_id,), fetch=True) or []
                 
@@ -64,7 +63,6 @@ def run_watchdog():
                     
                     if week_start:
                         try:
-                            # Handling standard datetime.date objects from mysql
                             ws_dt = pd.to_datetime(week_start)
                             if ws_dt > now_pd:
                                 week_started = False
@@ -82,7 +80,6 @@ def run_watchdog():
                         if week_end:
                             try:
                                 end_dt = pd.to_datetime(week_end)
-                                # End of week_end day
                                 end_dt = end_dt.replace(hour=23, minute=59, second=59)
                                 if end_dt + pd.Timedelta(minutes=5) > now_pd:
                                     should_process = True
@@ -96,7 +93,6 @@ def run_watchdog():
                             stall_time = None
                             is_stalled = True
                         else:
-                            # last_fetched is a datetime object
                             time_diff = now - last_fetched
                             is_stalled = time_diff > timedelta(minutes=STALL_THRESHOLD_MINUTES)
                             stall_time = time_diff
@@ -113,8 +109,7 @@ def run_watchdog():
                 alert_msgs = []
                 for sa in stalled_assignments:
                     aid = sa['id']
-                    
-                    # Check cooldown
+
                     last_alert = last_alert_time.get(aid)
                     if not last_alert or (now - last_alert) > timedelta(minutes=ALERT_COOLDOWN_MINUTES):
                         lf_str = str(sa['last_fetched']) if sa['last_fetched'] else "Never"

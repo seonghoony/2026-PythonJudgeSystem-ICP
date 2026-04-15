@@ -11,10 +11,8 @@ from typing import Optional, List, Dict, Union
 import re
 import datetime
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Constants
 DEFAULT_USER_AGENT = (
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
     'AppleWebKit/605.1.15 (KHTML, like Gecko) '
@@ -32,7 +30,6 @@ class SnowboardSession(requests.Session):
         self.timeout = timeout
         self.headers['User-Agent'] = DEFAULT_USER_AGENT
 
-        # Ensure directory exists
         if self.path_cookie.parent:
             self.path_cookie.parent.mkdir(parents=True, exist_ok=True)
 
@@ -51,8 +48,7 @@ class SnowboardSession(requests.Session):
 
         logger.info('Logging into SnowBoard...')
         bs = BeautifulSoup(response.text, 'html.parser')
-        
-        # Handle login form
+
         login_div = bs.find('div', {'class': 'textform'})
         if not login_div:
             logger.error("Login form not found.")
@@ -72,7 +68,6 @@ class SnowboardSession(requests.Session):
         if not self.is_logged_in(response):
             raise AssertionError('Login failed. Please check credentials.')
 
-        # Save cookies
         try:
             with self.path_cookie.open('wb') as fp:
                 pickle.dump(self.cookies, fp)
@@ -92,7 +87,6 @@ class SnowboardSession(requests.Session):
         return True
 
     def _request_wrapper(self, method, url, *args, **kwargs):
-        # Helper to handle re-login logic
         kwargs.setdefault('timeout', self.timeout)
         func = getattr(super(), method)
         
@@ -135,7 +129,6 @@ class SnowBoard:
                 bs = BeautifulSoup(response.text, 'html.parser')
                 table = bs.find('table')
                 if not table:
-                    # Possibly no assignments or bad ID
                     logger.warning(f"No assignment table found for lecture {id_lecture}")
                     return pd.DataFrame()
                     
@@ -150,13 +143,11 @@ class SnowBoard:
         if len(rows) < 2:
              return pd.DataFrame()
 
-        # Parse Table
         headers = [th.text.strip() for th in rows[0].find_all('th')]
         data = [[td.text.strip() for td in tr.find_all('td')] for tr in rows[1:]]
-        
+
         df = pd.DataFrame(data=data, columns=headers)
-        
-        # Extract assignment IDs from links
+
         raw_tds = [tr.find_all('td') for tr in rows[1:]]
         
         assignment_ids = []
@@ -174,13 +165,12 @@ class SnowBoard:
                 assignment_ids.append(None)
 
         df['id_assignment'] = assignment_ids
-        
-        # Clean up data
+
         if '주' in df.columns:
-            # Use ffill to handle merged cells (assuming empty string for merged rows)
+            # 병합된 셀(빈 문자열로 표현)을 직전 값으로 채우기 위해 ffill.
             df['주'] = df['주'].replace('', pd.NA).ffill()
 
-            # Find the year to construct full dates from '종료 일시'
+            # '종료 일시'에서 연도를 추출해 '주' 컬럼의 월/일과 결합.
             inferred_year = datetime.datetime.now().year
             if '종료 일시' in df.columns:
                 valid_dt = df['종료 일시'][df['종료 일시'] != '-'].dropna()
@@ -227,9 +217,7 @@ class SnowBoard:
         filter_status: str = '',
         ascending: bool = False
     ) -> pd.DataFrame:
-        
-        # Valid filters: 'requiregrading', 'submitted', ''
-        
+        # filter_status 가능값: 'requiregrading', 'submitted', ''
         tdir = 4 if ascending else 3
         url = (f'{self.URL}/mod/assign/view.php?action=grading'
                f'&id={id_assignment}&treset=1&tsort=timesubmitted&tdir={tdir}')
@@ -237,20 +225,16 @@ class SnowBoard:
         response = self.s.get(url)
         bs = BeautifulSoup(response.text, 'html.parser')
 
-        # Update view options if needed (per-page count, filter)
-        
         current_perpage = bs.find('select', {'id': 'id_perpage'})
         current_filter = bs.find('select', {'name': 'filter'})
-        
+
         need_update = False
-        
-        # Check Per Page
+
         if current_perpage:
             selected_perpage = current_perpage.select_one('option:checked')['value']
             if str(rows_per_page) != str(selected_perpage):
                 need_update = True
-        
-        # Check Filer
+
         if current_filter and filter_status:
             selected_filter = current_filter.select_one('option:checked')['value']
             if filter_status != selected_filter:
@@ -273,7 +257,6 @@ class SnowBoard:
             return pd.DataFrame()
 
         rows = table.find_all('tr')
-        # Filter headers
         headers_raw = [th.text.strip() for th in rows[0].find_all('th')]
         headers = []
         for h in headers_raw:
@@ -283,21 +266,17 @@ class SnowBoard:
             elif '상태' in h: headers.append('상태')
             elif '제출일' in h: headers.append('최근 제출일')
             elif '최종 수정' in h: headers.append('최종 수정')
-            elif '파일' in h or 'File' in h: headers.append('첨부파일') # Maps to 첨부파일명 logic
+            elif '파일' in h or 'File' in h: headers.append('첨부파일')
             else: headers.append(h)
 
-        
-        # Extract Data
         data = []
-        # Filter rows (exclude emptyrow class)
         valid_rows = [r for r in rows if 'class' in r.attrs and 'emptyrow' not in r.attrs['class']]
-        
+
         for row in valid_rows:
             tds = row.find_all('td')
             valid_tds = [td for td in tds if 'id' in td.attrs and td.attrs['id'].startswith('mod_assign_grading')]
             data.append(valid_tds)
 
-        # Build list of dicts with extracted fields
         list_of_dicts = []
         for i, row_tds in enumerate(data):
             row_dict = {}
@@ -305,7 +284,6 @@ class SnowBoard:
                 if j < len(headers):
                     col_name = headers[j]
                     row_dict[col_name] = td.text.strip()
-                    # special extraction
                     if '첨부파일' in col_name or 'File' in col_name:
                         a_tag = td.find('a')
                         if a_tag:
@@ -315,8 +293,7 @@ class SnowBoard:
                          a_tag = td.find('a')
                          if a_tag:
                              row_dict['성적버튼href'] = a_tag['href']
-            
-            # Extract 제출변경방지href from dropdown
+
             tr_orig = valid_rows[i]
             dropdown = tr_orig.find('div', {'class': 'dropdown-menu'})
             if dropdown:
@@ -328,25 +305,22 @@ class SnowBoard:
 
         df = pd.DataFrame(list_of_dicts)
         df['id_assignment'] = id_assignment
-        
-        # Extract Max Score
+
+        # 성적 컬럼의 "score / max" 표기에서 max 부분을 추출. 못 찾으면 기본값 100.
         max_score = 100.0
-        
-        # Look for '성적' or 'Grade' column
+
         grade_col = None
         for col in df.columns:
             if '성적' in col or 'Grade' in col:
                 grade_col = col
                 break
-                
+
         if grade_col and not df.empty:
-            # Try to parse "Score / Max" from the first non-empty value
             for val in df[grade_col]:
                 if isinstance(val, str) and '/' in val:
                     parts = val.split('/')
                     if len(parts) >= 2:
                         try:
-                            # e.g. "0.00 / 10.00" -> 10.0
                             candidate = float(parts[1].strip())
                             if candidate > 0:
                                 max_score = candidate
@@ -375,18 +349,17 @@ class SnowBoard:
         """
         if not row.get('첨부파일href'):
             return None
-            
+
         name = row.get('이름', 'Unknown')
         sid = row.get('학번', 'Unknown')
-        
-        # Timestamp parsing handling
+
         ts_str = row.get('최근 제출일', '0000-00-00')
 
         ts_safe = ts_str.replace(':', '').replace(' ', '_')
-        
+
         fname = row.get('첨부파일명', 'submission.py')
         ext = Path(fname).suffix
-        
+
         save_name = f"{ts_safe}_{name}_{sid}{ext}"
         save_path = dest_dir / save_name
         
@@ -407,23 +380,19 @@ class SnowBoard:
         response = self.s.get(url)
         bs = BeautifulSoup(response.text, 'html.parser')
 
-        # Extract title
         title = ""
         header = bs.find('h2')
         if header:
             title = header.get_text(strip=True)
 
-        # Extract assignment description
         intro_div = bs.find('div', {'id': 'intro'})
         if not intro_div:
-            # Fallback: look for the assignment body
             intro_div = bs.find('div', class_='assignmentbody')
         if not intro_div:
             intro_div = bs.find('div', class_='no-overflow')
 
         html_content = ""
         if intro_div:
-            # Download embedded images
             images_dir = Path("downloaded_instructions/images")
             images_dir.mkdir(parents=True, exist_ok=True)
 
@@ -431,9 +400,7 @@ class SnowBoard:
                 src = img.get('src', '')
                 if not src:
                     continue
-                # Build absolute URL
                 abs_url = urljoin(url, src)
-                # Generate local filename
                 from urllib.parse import urlparse
                 parsed = urlparse(abs_url)
                 img_name = f"{assignment_id}_{Path(parsed.path).name}"
@@ -447,7 +414,7 @@ class SnowBoard:
                     except Exception as e:
                         logger.warning(f"Failed to download image {abs_url}: {e}")
 
-                # Rewrite src to relative path
+                # 다운로드한 로컬 이미지로 src를 다시 쓴다 (오프라인 보존용).
                 img['src'] = f"images/{img_name}"
 
             html_content = str(intro_div)
@@ -490,45 +457,39 @@ class SnowBoard:
         inputs = bs.find('form', {'class': 'gradeform mform'}).find_all('input')
 
         data = {i['name']: i['value'] for i in inputs if 'name' in i.attrs}
-        
-        # Remove conflicting submit buttons
+
+        # 충돌 가능한 submit 버튼들은 제거 — 기본 save 버튼만 남겨야 응답이 깔끔하다.
         buttons_to_remove = [
             'saveandshownext', 'cancelbutton', 'nosaveandnext', 'nosaveandprevious'
         ]
         for btn in buttons_to_remove:
             if btn in data:
                 del data[btn]
-        
-        # Update dynamic fields
+
         data['grade'] = f'{score:.02f}'
         data['assignfeedbackcomments_editor[text]'] = comment.replace('\n', '<br>')
-        
-        # Post
-        # Use form action if available, else fallback to grade_url
+
         form_action = bs.find('form', {'class': 'gradeform mform'}).get('action')
         if form_action:
             action = urljoin(grade_url, form_action)
         else:
             action = grade_url
-        
+
         headers = {'Referer': grade_url}
         response = self.s.post(action, data=data, headers=headers)
-        
+
         if '성적 변경 사항이 저장되었습니다' in response.text:
             return True
-        
-        # If no explicit success message, check for explicit error.
+
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # 1. Success Check: Look for "성적 변경 사항이 저장되었습니다" in div.alert-success
+
         alert_div = soup.find('div', class_='alert-success')
         success_msg = "성적 변경 사항이 저장되었습니다"
-        
+
         if alert_div and success_msg in alert_div.get_text():
              logger.info("  Found success message in alert-success.")
              return True
-             
-        # 2. Error Check: Look for explicit error alerts
+
         error_div = soup.find('div', class_='alert-danger')
         if error_div:
             logger.error(f"  Snowboard Error: {error_div.get_text(strip=True)}")
@@ -539,7 +500,7 @@ class SnowBoard:
             logger.error(f"  Snowboard Error Class: {error_msg.get_text(strip=True)}")
             return False
 
-        # Fallback: no success/error alert — assume no change
+        # 성공/실패 알림이 모두 없으면 "변경 없음"으로 간주 (Snowboard의 동일 점수 재제출 동작).
         logger.info("  Success message not found, but no errors detected. Assuming 'No Change' success.")
         return True
 

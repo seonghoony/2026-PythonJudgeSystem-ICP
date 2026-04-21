@@ -61,6 +61,64 @@
             padding: 0 1rem;
         }
 
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            position: relative;
+            flex: 1;
+            min-width: 240px;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 0.55rem 2.25rem 0.55rem 0.85rem;
+            font-size: 0.95rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--surface-color);
+            color: var(--text-primary);
+            box-sizing: border-box;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .search-clear {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 26px;
+            height: 26px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            cursor: pointer;
+            border-radius: 50%;
+            display: none;
+        }
+        .search-clear:hover { background: #f1f5f9; }
+        .search-box.has-value .search-clear { display: inline-flex; align-items: center; justify-content: center; }
+
+        .search-count {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .empty-search-row td {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
         .table-container {
             background-color: var(--surface-color);
             border-radius: 12px;
@@ -169,6 +227,51 @@
             filter: none;
         }
 
+        @media (max-width: 768px) {
+            nav {
+                padding: 0.75rem 1rem;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+            nav h1 { font-size: 1rem; }
+
+            .container {
+                margin: 1rem auto;
+                padding: 0 0.5rem;
+            }
+
+            th, td {
+                padding: 0.4rem 0.5rem;
+            }
+            td { font-size: 0.82rem; }
+
+            .student-cell { gap: 8px; }
+            .student-photo { width: 32px; height: 32px; }
+            .student-name { font-size: 0.9rem; }
+            .student-id { font-size: 0.8rem; }
+
+            .assignment-summary {
+                padding: 3px 7px;
+                font-size: 0.78rem;
+            }
+
+            /* Sticky first column (student) while scrolling horizontally */
+            th:first-child,
+            td:first-child {
+                position: sticky;
+                left: 0;
+                background-color: var(--surface-color);
+                box-shadow: 1px 0 0 var(--border-color);
+            }
+            th:first-child {
+                z-index: 11;
+                background-color: #f8fafc;
+            }
+            tbody tr:hover td:first-child {
+                background-color: #f1f5f9;
+            }
+        }
+
     </style>
 </head>
 <body>
@@ -177,6 +280,13 @@
         <a href="/admin/feed">Global Real-time Feed &rarr;</a>
     </nav>
     <div class="container">
+        <div class="toolbar">
+            <div class="search-box" id="search-box">
+                <input type="search" id="student-search" placeholder="학생 이름 · 학번 · 학과로 검색" autocomplete="off" />
+                <button type="button" class="search-clear" id="search-clear" aria-label="검색어 지우기">×</button>
+            </div>
+            <div class="search-count" id="search-count"></div>
+        </div>
         <div class="table-container">
             <table>
                 <thead>
@@ -190,7 +300,7 @@
                 </thead>
                 <tbody>
                     {% for student in students %}
-                    <tr>
+                    <tr class="student-row" data-search="{{ (student.student_id ~ ' ' ~ student.name ~ ' ' ~ (student.department or '')) | lower }}">
                         <td>
                             <div class="student-cell">
                                 <img src="/admin/photo/{{ student.student_id }}" alt="Photo" class="student-photo" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjbHh4eCI+PHBhdGggZD0iTTEyIDJDMiAxMiA2IDIyIDYgMjJTMTAgMjQgMTIgMjRTMTggMjIgMTggMjJTMjIgMTIgMTIgMlptMCA4YzEuNjUgMCAzIDEuMzUgMyAzczEzIDMtMyAzdS0zLTMtMS4zNS0zLTN6Ii8+PC9zdmc+'" />
@@ -226,5 +336,59 @@
             </table>
         </div>
     </div>
+    <script>
+        (function () {
+            const input = document.getElementById('student-search');
+            const clearBtn = document.getElementById('search-clear');
+            const box = document.getElementById('search-box');
+            const count = document.getElementById('search-count');
+            const rows = Array.from(document.querySelectorAll('tr.student-row'));
+            const tbody = document.querySelector('tbody');
+            const total = rows.length;
+
+            let emptyRow = null;
+            function ensureEmptyRow(colspan) {
+                if (emptyRow) return emptyRow;
+                emptyRow = document.createElement('tr');
+                emptyRow.className = 'empty-search-row';
+                const td = document.createElement('td');
+                td.setAttribute('colspan', colspan);
+                td.textContent = '검색 결과가 없습니다.';
+                emptyRow.appendChild(td);
+                tbody.appendChild(emptyRow);
+                return emptyRow;
+            }
+
+            function updateCount(visible) {
+                if (!input.value) {
+                    count.textContent = total ? `총 ${total}명` : '';
+                } else {
+                    count.textContent = `${visible} / ${total}명`;
+                }
+            }
+
+            function apply() {
+                const q = input.value.trim().toLowerCase();
+                box.classList.toggle('has-value', q.length > 0);
+                let visible = 0;
+                rows.forEach(r => {
+                    const match = !q || (r.dataset.search || '').includes(q);
+                    r.style.display = match ? '' : 'none';
+                    if (match) visible++;
+                });
+                const colspan = document.querySelectorAll('thead th').length || 3;
+                if (q && visible === 0 && total > 0) {
+                    ensureEmptyRow(colspan).style.display = '';
+                } else if (emptyRow) {
+                    emptyRow.style.display = 'none';
+                }
+                updateCount(visible);
+            }
+
+            input.addEventListener('input', apply);
+            clearBtn.addEventListener('click', () => { input.value = ''; input.focus(); apply(); });
+            apply();
+        })();
+    </script>
 </body>
 </html>

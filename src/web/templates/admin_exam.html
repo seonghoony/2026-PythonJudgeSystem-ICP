@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>중간고사 실시간 현황 — {{ lecture_name }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --surface-2: #0b1220;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --border-color: #334155;
+            --accent: #38bdf8;
+        }
+        * { box-sizing: border-box; }
+        /* 빔 프로젝터 투사 기준 확대 레이아웃 (≥1920px 권장).
+           ?compact=1 쿼리로 기존 데스크톱 밀도 fallback. */
+        html { font-size: 19px; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            background: var(--bg-color);
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+        nav {
+            background: #0b1220;
+            border-bottom: 1px solid var(--border-color);
+            padding: 1.1rem 1.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        nav h1 {
+            margin: 0;
+            font-size: 1.7rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .live-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: #22c55e;
+            border-radius: 50%;
+            animation: pulse 1.6s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        .clock-block {
+            display: flex;
+            gap: 2rem;
+            font-variant-numeric: tabular-nums;
+            font-size: 1.35rem;
+            color: var(--text-secondary);
+        }
+        .clock-block strong {
+            color: var(--text-primary);
+            font-size: 1.6rem;
+            margin-left: 0.3rem;
+        }
+
+        .window-banner {
+            text-align: center;
+            padding: 0.7rem;
+            background: var(--surface-2);
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .window-banner strong { color: var(--text-primary); }
+        .window-banner .missing { color: #fca5a5; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(420px, 1fr));
+            gap: 1.25rem;
+            padding: 1.25rem;
+        }
+        @media (max-width: 1400px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+
+        .card {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.1rem;
+        }
+        .card-title {
+            display: flex;
+            align-items: baseline;
+            gap: 0.8rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.7rem;
+        }
+        .card-title .label {
+            font-weight: 800;
+            color: var(--accent);
+            font-size: 1.8rem;
+            letter-spacing: 0.02em;
+        }
+        .card-title .name {
+            font-weight: 600;
+            font-size: 1.25rem;
+        }
+        .card-title .aid {
+            margin-left: auto;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            font-variant-numeric: tabular-nums;
+        }
+        .fetch-line {
+            margin-top: -0.6rem;    /* card gap 위쪽을 좁혀 title 바로 아래처럼 보이도록 */
+            color: #64748b;          /* 회색 — 강조하지 않음 */
+            font-size: 0.85rem;
+            font-variant-numeric: tabular-nums;
+        }
+        .fetch-line .sep { opacity: 0.6; margin: 0 0.4rem; }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.65rem;
+        }
+        .stat {
+            background: var(--surface-2);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 0.75rem 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .stat .k {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+        }
+        .stat .v {
+            font-size: 2.3rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.1;
+        }
+        .stat.rate .v { color: #22c55e; }
+
+        .chart-title {
+            margin: 0 0 0.35rem 0;
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .chart {
+            width: 100%;
+            height: 230px;
+        }
+
+        .recent-wrap {
+            border-top: 1px solid var(--border-color);
+            padding-top: 0.8rem;
+        }
+        .recent-wrap h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        table.recent {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 1.15rem;
+        }
+        table.recent td {
+            padding: 10px 6px;
+            border-bottom: 1px dashed var(--border-color);
+        }
+        table.recent tr:last-child td { border-bottom: none; }
+        table.recent td.anon {
+            font-family: 'JetBrains Mono', Consolas, monospace;
+            color: var(--text-primary);
+            font-size: 1.2rem;
+            letter-spacing: 0.02em;
+        }
+        table.recent td.time {
+            text-align: right;
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        table.recent td.time .abs {
+            color: var(--text-primary);
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+        table.recent td.time .rel {
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+        table.recent .empty td {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 1.4rem 0;
+            font-size: 1rem;
+        }
+
+        .badge {
+            padding: 4px 14px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .badge-ac      { background: #064e3b; color: #6ee7b7; }
+        .badge-wa      { background: #450a0a; color: #fca5a5; }
+        .badge-rte     { background: #422006; color: #fcd34d; }
+        .badge-tle     { background: #3b0764; color: #c4b5fd; }
+        .badge-mle     { background: #1e1b4b; color: #a5b4fc; }
+        .badge-sys     { background: #1f2937; color: #cbd5e1; }
+        .badge-pending { background: #0c4a6e; color: #7dd3fc; }
+
+        .empty-problems {
+            text-align: center;
+            padding: 4rem 1rem;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h1><span class="live-indicator"></span> 중간고사 실시간 현황 — {{ lecture_name }}</h1>
+        <div class="clock-block">
+            <span>현재 시각 <strong id="server-time">--:--:--</strong></span>
+            <span>종료까지 <strong id="time-left">--:--:--</strong></span>
+        </div>
+    </nav>
+
+    {% if not (window_start and window_end) %}
+    <div class="window-banner">
+        <span class="missing">시험 구간이 설정되지 않았습니다 (config/monitor.yaml 의 exam.{{ lecture_id }} 확인)</span>
+    </div>
+    {% endif %}
+
+    {% if problems %}
+    <div class="grid" id="grid">
+        {% for p in problems %}
+        <div class="card" data-aid="{{ p.assignment_id }}">
+            <div class="card-title">
+                <span class="label">{{ p.label }}</span>
+                <span class="name">{{ p.name }}</span>
+                <span class="aid">#{{ p.assignment_id }}</span>
+            </div>
+            <div class="fetch-line" data-field="last_fetched_at">마지막 채점 -</div>
+            <div class="stats">
+                <div class="stat"><div class="k">제출 인원</div><div class="v" data-field="submitters">-</div></div>
+                <div class="stat"><div class="k">총 제출</div><div class="v" data-field="total_submissions">-</div></div>
+                <div class="stat"><div class="k">AC 인원</div><div class="v" data-field="ac_count">-</div></div>
+                <div class="stat rate"><div class="k">정답률</div><div class="v" data-field="correct_rate">-</div></div>
+            </div>
+            <div class="chart-wrap">
+                <h4 class="chart-title">정답자 누적분포</h4>
+                <div class="chart" id="cdf-{{ p.assignment_id }}"></div>
+            </div>
+            <div class="recent-wrap">
+                <h3>최근 5건</h3>
+                <table class="recent">
+                    <tbody data-field="recent">
+                        <tr class="empty"><td colspan="3">아직 제출이 없습니다.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-problems">
+        이 분반에는 등록된 시험 문항이 없습니다. <code>config/monitor.yaml</code> 의
+        <code>exam.{{ lecture_id }}.problems</code> 를 설정해 주세요.
+    </div>
+    {% endif %}
+
+    <script>
+        const LECTURE_ID = {{ lecture_id }};
+        const API = `/admin/api/exam/${LECTURE_ID}`;
+        const WINDOW_START = {{ (window_start | tojson) if window_start else 'null' }};
+        const WINDOW_END = {{ (window_end | tojson) if window_end else 'null' }};
+        const CLASS_SIZE = {{ class_size if class_size else 'null' }};   // CDF y축 max
+
+        const charts = {};  // aid -> echarts instance
+        let LATEST_SERVER_TIME = null;   // 가장 최근 API 응답의 server_time (DB 기준)
+
+        function parseTs(s) {
+            // "YYYY-MM-DD HH:MM:SS" → Date
+            if (!s) return null;
+            return new Date(s.replace(' ', 'T'));
+        }
+
+        // 시험 모니터링 화면에서는 절대 시각이 더 유용하다.
+        // 보조적으로 '서버 기준 경과' 를 작게 덧붙임. 클라이언트 wall-clock 대신
+        // LATEST_SERVER_TIME(=DB 서버 시각)을 기준점으로 사용해야
+        // fake 데이터나 시차가 있는 시연에서도 일관된다.
+        // submitted_at 은 SnowBoard 기록 기반의 분 단위 값이므로 초까지 표시하지 않는다.
+        function absTime(ts) {
+            const d = parseTs(ts);
+            if (!d) return '';
+            return String(d.getHours()).padStart(2,'0') + ':'
+                 + String(d.getMinutes()).padStart(2,'0');
+        }
+        function elapsedFromServer(ts) {
+            const d = parseTs(ts);
+            const ref = parseTs(LATEST_SERVER_TIME);
+            if (!d || !ref) return '';
+            const diffMin = Math.floor((ref.getTime() - d.getTime()) / 60000);
+            if (diffMin < 0) return '';       // 서버 시각보다 미래 제출은 비정상 — 생략
+            if (diffMin < 1) return '방금';
+            if (diffMin < 60) return `${diffMin}분 전`;
+            const h = Math.floor(diffMin / 60);
+            const m = diffMin % 60;
+            return m ? `${h}시간 ${m}분 전` : `${h}시간 전`;
+        }
+
+        function fmtHms(totalSec) {
+            if (totalSec < 0) totalSec = 0;
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+
+        function verdictBadge(v) {
+            const cls = v === 'AC' ? 'badge-ac'
+                      : v === 'WA' ? 'badge-wa'
+                      : v === 'RTE' ? 'badge-rte'
+                      : v === 'TLE' ? 'badge-tle'
+                      : v === 'MLE' ? 'badge-mle'
+                      : v ? 'badge-sys' : 'badge-pending';
+            const txt = v || 'PENDING';
+            return `<span class="badge ${cls}">${txt}</span>`;
+        }
+
+        function initChart(aid) {
+            const el = document.getElementById('cdf-' + aid);
+            if (!el) return null;
+            const chart = echarts.init(el, 'dark', { renderer: 'canvas' });
+            const opt = {
+                backgroundColor: 'transparent',
+                grid: { left: 40, right: 28, top: 14, bottom: 28 },
+                tooltip: { trigger: 'axis' },
+                xAxis: {
+                    type: 'time',
+                    min: WINDOW_START ? parseTs(WINDOW_START).getTime() : undefined,
+                    max: WINDOW_END ? parseTs(WINDOW_END).getTime() : undefined,
+                    // 20분 간격으로 고정 — WINDOW_START=18:40 기준 마지막 tick이 21:00(WINDOW_END)에 떨어짐.
+                    interval: 20 * 60 * 1000,
+                    axisLabel: {
+                        fontSize: 13,
+                        color: '#94a3b8',
+                        showMinLabel: true,
+                        showMaxLabel: true,   // 경계(18:40, 21:00) 라벨을 숨기지 않음
+                        hideOverlap: false,
+                        formatter: (value) => {
+                            const d = new Date(value);
+                            return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+                        }
+                    },
+                    splitLine: { lineStyle: { color: '#1f2937' } }
+                },
+                yAxis: {
+                    type: 'value',
+                    min: 0,
+                    max: CLASS_SIZE || null,   // 분반 수강 인원 기준. 미설정 시 자동.
+                    minInterval: 1,
+                    axisLabel: { fontSize: 13, color: '#94a3b8' },
+                    splitLine: { lineStyle: { color: '#1f2937' } }
+                },
+                series: [{
+                    name: '최초 AC 누적',
+                    type: 'line',
+                    step: 'end',
+                    showSymbol: false,
+                    smooth: false,
+                    lineStyle: { color: '#22c55e', width: 2 },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(34, 197, 94, 0.35)' },
+                            { offset: 1, color: 'rgba(34, 197, 94, 0.02)' }
+                        ])
+                    },
+                    data: []
+                }]
+            };
+            chart.setOption(opt);
+            return chart;
+        }
+
+        document.querySelectorAll('.card').forEach(card => {
+            const aid = card.dataset.aid;
+            charts[aid] = initChart(aid);
+        });
+        window.addEventListener('resize', () => {
+            Object.values(charts).forEach(c => c && c.resize());
+        });
+
+        function renderProblem(p) {
+            const card = document.querySelector(`.card[data-aid="${p.assignment_id}"]`);
+            if (!card) return;
+
+            const setField = (name, val) => {
+                const el = card.querySelector(`[data-field="${name}"]`);
+                if (el) el.textContent = val;
+            };
+            setField('submitters', p.submitters);
+            setField('total_submissions', p.total_submissions);
+            setField('ac_count', p.ac_count);
+            setField('correct_rate', Math.round(p.correct_rate * 100) + ' %');
+
+            // 마지막 채점(fetch) 시점 — HH:MM 절대시각 + 서버 기준 상대시각
+            const fetchEl = card.querySelector('[data-field="last_fetched_at"]');
+            if (fetchEl) {
+                if (p.last_fetched_at) {
+                    const abs = absTime(p.last_fetched_at);
+                    const rel = elapsedFromServer(p.last_fetched_at);
+                    fetchEl.innerHTML = `마지막 채점 <strong style="color:#94a3b8;">${abs}</strong>`
+                        + (rel ? `<span class="sep">·</span>${rel}` : '');
+                } else {
+                    fetchEl.textContent = '마지막 채점 기록 없음';
+                }
+            }
+
+            // CDF
+            const chart = charts[p.assignment_id];
+            if (chart) {
+                const data = (p.cdf || []).map(([ts, n]) => [parseTs(ts).getTime(), n]);
+                // 서버(DB) 기준 '현재 시각' 까지 plateau 를 연장.
+                // 시험 구간[WINDOW_START, WINDOW_END] 밖이거나 마지막 데이터보다 이전이면 연장하지 않음.
+                if (data.length && LATEST_SERVER_TIME) {
+                    const nowMs = parseTs(LATEST_SERVER_TIME).getTime();
+                    const ws = WINDOW_START ? parseTs(WINDOW_START).getTime() : -Infinity;
+                    const we = WINDOW_END ? parseTs(WINDOW_END).getTime() : Infinity;
+                    const lastMs = data[data.length - 1][0];
+                    const extendTo = Math.min(nowMs, we);
+                    if (extendTo > lastMs && extendTo >= ws) {
+                        data.push([extendTo, data[data.length - 1][1]]);
+                    }
+                }
+                chart.setOption({ series: [{ data }] });
+            }
+
+            // Recent 5
+            const tbody = card.querySelector('tbody[data-field="recent"]');
+            if (tbody) {
+                if (!p.recent || p.recent.length === 0) {
+                    tbody.innerHTML = '<tr class="empty"><td colspan="3">아직 제출이 없습니다.</td></tr>';
+                } else {
+                    tbody.innerHTML = p.recent.map(r => {
+                        const abs = absTime(r.submitted_at);
+                        const rel = elapsedFromServer(r.submitted_at);
+                        return `
+                        <tr>
+                            <td class="anon">${r.anon_id}</td>
+                            <td>${verdictBadge(r.verdict)}</td>
+                            <td class="time">
+                                <span class="abs">${abs}</span>
+                                ${rel ? `<span class="rel">${rel}</span>` : ''}
+                            </td>
+                        </tr>`;
+                    }).join('');
+                }
+            }
+        }
+
+        function updateClocks(serverTime) {
+            const st = document.getElementById('server-time');
+            if (st && serverTime) st.textContent = serverTime.slice(11, 19);
+            const tl = document.getElementById('time-left');
+            if (tl) {
+                if (WINDOW_END && serverTime) {
+                    const diff = Math.floor((parseTs(WINDOW_END).getTime() - parseTs(serverTime).getTime()) / 1000);
+                    tl.textContent = fmtHms(diff);
+                } else {
+                    tl.textContent = '--:--:--';
+                }
+            }
+        }
+
+        let inflight = false;
+        async function tick() {
+            if (inflight) return;
+            inflight = true;
+            try {
+                const r = await fetch(API, { cache: 'no-store' });
+                if (!r.ok) {
+                    if (r.status === 401) { window.location.reload(); return; }
+                    throw new Error('HTTP ' + r.status);
+                }
+                const d = await r.json();
+                LATEST_SERVER_TIME = d.server_time || null;
+                updateClocks(d.server_time);
+                (d.problems || []).forEach(renderProblem);
+            } catch (e) {
+                console.error('poll error:', e);
+            } finally {
+                inflight = false;
+            }
+        }
+
+        tick();
+        setInterval(tick, 1000);
+    </script>
+</body>
+</html>

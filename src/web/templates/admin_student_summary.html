@@ -179,6 +179,46 @@
             border-radius: 12px;
             border: 1px solid var(--border-color);
         }
+
+        @media (max-width: 768px) {
+            nav {
+                padding: 0.75rem 1rem;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+            .nav-brand { font-size: 1rem; }
+
+            .container {
+                margin: 1rem auto;
+                padding: 0 0.75rem;
+            }
+
+            .student-header {
+                flex-direction: column;
+                text-align: center;
+                gap: 12px;
+                padding: 1.25rem;
+                margin-bottom: 1.25rem;
+            }
+            .student-info h1 { font-size: 1.25rem; }
+            .student-meta { font-size: 0.9rem; }
+
+            .assignment-header {
+                padding: 0.75rem 1rem;
+                font-size: 1rem;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .submission-item {
+                padding: 0.75rem 1rem;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .submission-meta { gap: 10px; }
+            .score-box { width: auto; text-align: left; }
+            .empty-state { padding: 2.5rem 1rem; }
+        }
     </style>
 </head>
 <body>

@@ -413,7 +413,7 @@
                     <label for="lectureSelect">과목 (Lecture)</label>
                     <select id="lectureSelect">
                         {% for lec in lectures %}
-                            <option value="{{ lec.id }}" {% if '003' in lec.name %}selected{% endif %}>{{ lec.name }}</option>
+                            <option value="{{ lec.id }}">{{ lec.name }}</option>
                         {% endfor %}
                     </select>
                 </div>

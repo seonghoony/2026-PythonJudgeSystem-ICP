@@ -82,6 +82,42 @@ def verify_lecture_access(request: Request, lecture_id: int, username: str = Dep
         )
     return username
 
+@app.get("/", response_class=HTMLResponse)
+async def admin_index(request: Request, username: str = Depends(log_dashboard_access)):
+    """모든 운영 기능으로 가는 진입점 랜딩 페이지."""
+    admin_username = os.environ.get("SNOWBOARD_USER", "")
+    is_admin = (username == admin_username)
+
+    sql_lectures = "SELECT id, name FROM lectures ORDER BY id ASC"
+    lectures = db.execute_query(sql_lectures, fetch=True) or []
+    if not is_admin:
+        allowed = db.get_ta_accessible_lectures(username)
+        lectures = [l for l in lectures if l['id'] in allowed]
+
+    monitor_config_path = Path("config/monitor.yaml")
+    exam_conf = {}
+    if monitor_config_path.exists():
+        try:
+            with open(monitor_config_path) as f:
+                exam_conf = (yaml.safe_load(f) or {}).get("exam") or {}
+        except Exception:
+            exam_conf = {}
+
+    # 시험 문항이 실제로 선언된 분반만 시험 대시보드 링크로 노출.
+    exam_lectures = [
+        l for l in lectures
+        if (exam_conf.get(l['id']) or {}).get("problems")
+    ]
+
+    return templates.TemplateResponse(
+        request=request, name="admin_index.html", context={
+            "username": username,
+            "is_admin": is_admin,
+            "lectures": lectures,
+            "exam_lectures": exam_lectures,
+        }
+    )
+
 @app.get("/admin/roaster/{lecture_id}", response_class=HTMLResponse)
 async def admin_lecture_view(request: Request, lecture_id: int, _: str = Depends(verify_lecture_access)):
     sql_lecture = "SELECT name FROM lectures WHERE id = %s"
@@ -324,6 +360,125 @@ async def api_feed_data(username: str = Depends(verify_credentials)):
     return {
         "feed": feed,
         "monitor_table": monitor_table
+    }
+
+def _mask_student_id(sid: str) -> str:
+    """학번 앞 2자 + 중간 x 마스킹 + 뒤 2자. 5자 미만이면 전체 마스킹."""
+    if not sid:
+        return "xxxx"
+    s = str(sid)
+    if len(s) < 5:
+        return "x" * len(s)
+    return s[:2] + "x" * (len(s) - 4) + s[-2:]
+
+def _load_exam_config(lecture_id: int):
+    """config/monitor.yaml 의 exam.<lecture_id> 섹션을 읽고
+    문항 메타(assignments 테이블의 name)를 합쳐 반환."""
+    monitor_config_path = Path("config/monitor.yaml")
+    conf = {}
+    if monitor_config_path.exists():
+        try:
+            with open(monitor_config_path) as f:
+                conf = yaml.safe_load(f) or {}
+        except Exception:
+            conf = {}
+
+    exam = (conf.get("exam") or {}).get(lecture_id) or {}
+    problem_ids = list(exam.get("problems") or [])
+    window_start = exam.get("window_start")
+    window_end = exam.get("window_end")
+    class_size = exam.get("class_size")
+
+    problem_meta = []
+    for idx, aid in enumerate(problem_ids):
+        rows = db.execute_query(
+            "SELECT name FROM assignments WHERE id = %s", (aid,), fetch=True
+        ) or []
+        name = rows[0]["name"] if rows else f"Assignment {aid}"
+        # "Midterm 001 P1—…" 형태에서 em dash 이후만 추출해 간결화
+        if "—" in name:
+            display_name = name.split("—", 1)[1].strip()
+        else:
+            display_name = name
+        problem_meta.append({
+            "assignment_id": aid,
+            "label": f"P{idx + 1}",
+            "name": display_name,
+        })
+
+    return {
+        "window_start": str(window_start) if window_start else None,
+        "window_end": str(window_end) if window_end else None,
+        "class_size": int(class_size) if class_size else None,
+        "problems": problem_meta,
+    }
+
+@app.get("/admin/exam/{lecture_id}", response_class=HTMLResponse)
+async def admin_exam_view(request: Request, lecture_id: int, _: str = Depends(verify_lecture_access)):
+    """실시간 중간고사 대시보드 (HTML 셸). 실제 숫자·차트·최근 5건은
+    브라우저가 1초마다 /admin/api/exam/{lecture_id} 를 폴링하여 채운다."""
+    sql_lecture = "SELECT name FROM lectures WHERE id = %s"
+    lecture_rows = db.execute_query(sql_lecture, (lecture_id,), fetch=True)
+    lecture_name = lecture_rows[0]["name"] if lecture_rows else f"Lecture {lecture_id}"
+
+    cfg = _load_exam_config(lecture_id)
+
+    return templates.TemplateResponse(
+        request=request, name="admin_exam.html", context={
+            "lecture_id": lecture_id,
+            "lecture_name": lecture_name,
+            "window_start": cfg["window_start"],
+            "window_end": cfg["window_end"],
+            "class_size": cfg["class_size"],
+            "problems": cfg["problems"],
+        }
+    )
+
+@app.get("/admin/api/exam/{lecture_id}")
+async def api_exam_data(lecture_id: int, _: str = Depends(verify_lecture_access)):
+    """대시보드용 JSON. 학생 실정보(student_id, name, 부서, 코드 등)는
+    서버 경계에서 제거되며 마스킹된 anon_id 만 브라우저로 전달된다."""
+    cfg = _load_exam_config(lecture_id)
+    problems_out = []
+
+    for meta in cfg["problems"]:
+        aid = meta["assignment_id"]
+        stats = db.get_exam_problem_stats(aid)
+
+        recent_raw = db.get_exam_recent_submissions(aid, limit=5)
+        recent = [{
+            "anon_id": _mask_student_id(r["student_id"]),
+            "verdict": r.get("verdict"),
+            "submitted_at": str(r["submitted_at"]) if r.get("submitted_at") else None,
+        } for r in recent_raw]
+
+        # 서버에서 누적 카운트까지 계산해 ECharts 에 바로 바인딩 가능한 (ts, n) 쌍으로 내려줌.
+        cdf_rows = db.get_exam_first_ac_cdf(aid)
+        cdf = []
+        for i, row in enumerate(cdf_rows, start=1):
+            ts = row.get("first_ac")
+            if ts is None:
+                continue
+            cdf.append([str(ts), i])
+
+        problems_out.append({
+            "assignment_id": aid,
+            "label": meta["label"],
+            "name": meta["name"],
+            "submitters": stats["submitters"],
+            "total_submissions": stats["total_submissions"],
+            "ac_count": stats["ac_count"],
+            "correct_rate": stats["correct_rate"],
+            "last_fetched_at": stats["last_fetched_at"],
+            "cdf": cdf,
+            "recent": recent,
+        })
+
+    return {
+        "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "window_start": cfg["window_start"],
+        "window_end": cfg["window_end"],
+        "problems": problems_out,
     }
 
 @app.get("/admin/photo/{student_id}")

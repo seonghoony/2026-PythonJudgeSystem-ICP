@@ -323,7 +323,7 @@ def get_cdf_data(assignment_id: int) -> list[dict]:
     Finds the earliest submission time for each student, and returns a chronologically sorted list.
     """
     sql = """
-    SELECT 
+    SELECT
         student_id,
         MIN(submitted_at) as first_submission
     FROM submissions
@@ -333,6 +333,71 @@ def get_cdf_data(assignment_id: int) -> list[dict]:
     """
     rows = execute_query(sql, (assignment_id,), fetch=True)
     return rows
+
+# --- Midterm Exam Live Dashboard ---
+
+def get_exam_problem_stats(assignment_id: int) -> dict:
+    """
+    단일 문항에 대한 실시간 통계. uniq_students는 `is_latest=1` 기준,
+    ac_count도 `is_latest=1 AND verdict='AC'` 기준이라 재제출로 AC를 깨면
+    정답자 수가 감소할 수 있다.
+    last_fetched_at 은 assignments 테이블의 값(크롤러의 가장 최근 fetch 시점).
+    """
+    sql = """
+    SELECT
+        COUNT(DISTINCT CASE WHEN s.is_latest = 1 THEN s.student_id END) AS submitters,
+        COUNT(s.id) AS total_submissions,
+        SUM(CASE WHEN s.is_latest = 1 AND s.verdict = 'AC' THEN 1 ELSE 0 END) AS ac_count,
+        a.last_fetched_at AS last_fetched_at
+    FROM assignments a
+    LEFT JOIN submissions s ON s.assignment_id = a.id
+    WHERE a.id = %s
+    GROUP BY a.id
+    """
+    rows = execute_query(sql, (assignment_id,), fetch=True)
+    if not rows:
+        return {"submitters": 0, "total_submissions": 0, "ac_count": 0,
+                "correct_rate": 0.0, "last_fetched_at": None}
+    r = rows[0]
+    submitters = int(r["submitters"] or 0)
+    total = int(r["total_submissions"] or 0)
+    ac = int(r["ac_count"] or 0)
+    rate = (ac / submitters) if submitters else 0.0
+    return {
+        "submitters": submitters,
+        "total_submissions": total,
+        "ac_count": ac,
+        "correct_rate": rate,
+        "last_fetched_at": str(r["last_fetched_at"]) if r.get("last_fetched_at") else None,
+    }
+
+def get_exam_recent_submissions(assignment_id: int, limit: int = 5) -> list[dict]:
+    """
+    최근 제출 N건. is_latest 무관 — 재제출 직전 시도도 몇 초간 보이도록.
+    student_id를 그대로 돌려주므로 라우터에서 반드시 익명화할 것.
+    """
+    sql = """
+    SELECT student_id, verdict, score, max_score, submitted_at
+    FROM submissions
+    WHERE assignment_id = %s
+    ORDER BY submitted_at DESC, id DESC
+    LIMIT %s
+    """
+    return execute_query(sql, (assignment_id, limit), fetch=True) or []
+
+def get_exam_first_ac_cdf(assignment_id: int) -> list[dict]:
+    """
+    학생별 '최초 AC' 시각을 오름차순으로 반환. student_id는 집계 목적으로만
+    조회되며 호출측에서 즉시 버리고 (timestamp, cumulative_count) 형태로 쓴다.
+    """
+    sql = """
+    SELECT MIN(submitted_at) AS first_ac
+    FROM submissions
+    WHERE assignment_id = %s AND verdict = 'AC'
+    GROUP BY student_id
+    ORDER BY first_ac ASC
+    """
+    return execute_query(sql, (assignment_id,), fetch=True) or []
 
 # --- Admin Dashboard Support ---
 

@@ -262,7 +262,8 @@
 <body>
     <nav>
         <h1><span class="live-indicator"></span> PythonJudgeSystem: Live feed</h1>
-        <div style="display: flex; gap: 1rem; align-items: center;">
+        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <a href="/" title="홈으로" style="color: var(--header-text); text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; background: rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">🏠 홈</a>
             {% for lec in lectures %}
                 <a href="/admin/roaster/{{ lec.id }}" style="color: var(--header-text); text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; background: rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">{{ lec.name }}</a>
             {% endfor %}

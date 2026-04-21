@@ -245,9 +245,12 @@
 <body>
     <nav>
         <h1><span class="live-indicator"></span> 중간고사 실시간 현황 — {{ lecture_name }}</h1>
-        <div class="clock-block">
-            <span>현재 시각 <strong id="server-time">--:--:--</strong></span>
-            <span>종료까지 <strong id="time-left">--:--:--</strong></span>
+        <div style="display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap;">
+            <a href="/" title="홈으로" style="color: var(--text-primary); text-decoration: none; font-size: 1rem; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface-color); transition: background 0.2s;">🏠 홈</a>
+            <div class="clock-block">
+                <span>현재 시각 <strong id="server-time">--:--:--</strong></span>
+                <span>종료까지 <strong id="time-left">--:--:--</strong></span>
+            </div>
         </div>
     </nav>
 

@@ -90,6 +90,55 @@
             .grid { grid-template-columns: 1fr; }
         }
 
+        /* 시험장 별 응시/출석/퇴실 요약 — 문제 카드 위에 얇은 스트립으로 붙는다. */
+        .room-strip {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(420px, 1fr));
+            gap: 1.25rem;
+            padding: 0.85rem 1.25rem 0;
+        }
+        @media (max-width: 1400px) {
+            .room-strip { grid-template-columns: 1fr; }
+        }
+        .room-cell {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.55rem 0.95rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.9rem;
+        }
+        .room-cell .room-name {
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: var(--text-primary);
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+        }
+        .room-cell .room-nums {
+            display: flex;
+            gap: 1.1rem;
+            font-variant-numeric: tabular-nums;
+        }
+        .room-cell .num {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 0.35rem;
+        }
+        .room-cell .nlabel {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+        }
+        .room-cell .nval {
+            font-weight: 700;
+            font-size: 1.35rem;
+            color: var(--text-primary);
+        }
+        .room-cell .nval.in  { color: #22c55e; }
+        .room-cell .nval.out { color: #f59e0b; }
+
         .card {
             background: var(--surface-color);
             border: 1px solid var(--border-color);
@@ -108,9 +157,10 @@
         }
         .card-title .label {
             font-weight: 800;
-            color: var(--accent);
+            color: #2dd4bf;   /* 청록 — 문제 번호(실기 N)를 sky blue accent와 구분 */
             font-size: 1.8rem;
             letter-spacing: 0.02em;
+            white-space: nowrap;
         }
         .card-title .name {
             font-weight: 600;
@@ -244,7 +294,10 @@
 </head>
 <body>
     <nav>
-        <h1><span class="live-indicator"></span> 중간고사 실시간 현황 — {{ lecture_name }}</h1>
+        <h1>
+            <img src="/static/smu_logo_white.svg" alt="SMWU" style="height: 2.2rem; width: auto; flex-shrink: 0;">
+            <span class="live-indicator"></span> 중간고사 실시간 현황 — {{ lecture_name }}
+        </h1>
         <div style="display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap;">
             <a href="/" title="홈으로" style="color: var(--text-primary); text-decoration: none; font-size: 1rem; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface-color); transition: background 0.2s;">🏠 홈</a>
             <div class="clock-block">
@@ -260,13 +313,28 @@
     </div>
     {% endif %}
 
+    {% if rooms %}
+    <div class="room-strip" id="roomStrip">
+        {% for r in rooms %}
+        <div class="room-cell" data-room="{{ r.room }}">
+            <div class="room-name">{{ r.room }}</div>
+            <div class="room-nums">
+                <span class="num"><span class="nlabel">총원</span><span class="nval" data-field="enrolled">{{ r.enrolled }}</span></span>
+                <span class="num"><span class="nlabel">출석</span><span class="nval in" data-field="checked_in">{{ r.checked_in }}</span></span>
+                <span class="num"><span class="nlabel">퇴실</span><span class="nval out" data-field="checked_out">{{ r.checked_out }}</span></span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if problems %}
     <div class="grid" id="grid">
         {% for p in problems %}
         <div class="card" data-aid="{{ p.assignment_id }}">
             <div class="card-title">
                 <span class="label">{{ p.label }}</span>
-                <span class="name">{{ p.name }}</span>
+                {% if p.name and p.name != p.label %}<span class="name">{{ p.name }}</span>{% endif %}
                 <span class="aid">#{{ p.assignment_id }}</span>
             </div>
             <div class="fetch-line" data-field="last_fetched_at">마지막 채점 -</div>
@@ -274,7 +342,7 @@
                 <div class="stat"><div class="k">제출 인원</div><div class="v" data-field="submitters">-</div></div>
                 <div class="stat"><div class="k">총 제출</div><div class="v" data-field="total_submissions">-</div></div>
                 <div class="stat"><div class="k">AC 인원</div><div class="v" data-field="ac_count">-</div></div>
-                <div class="stat rate"><div class="k">정답률</div><div class="v" data-field="correct_rate">-</div></div>
+                <div class="stat rate"><div class="k">정답률 (%)</div><div class="v" data-field="correct_rate">-</div></div>
             </div>
             <div class="chart-wrap">
                 <h4 class="chart-title">정답자 누적분포</h4>
@@ -346,6 +414,13 @@
             return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
         }
 
+        const VERDICT_KO = {
+            AC: '정답',
+            WA: '오답',
+            RTE: '예외',
+            TLE: '시간초과',
+            MLE: '메모리초과',
+        };
         function verdictBadge(v) {
             const cls = v === 'AC' ? 'badge-ac'
                       : v === 'WA' ? 'badge-wa'
@@ -353,7 +428,7 @@
                       : v === 'TLE' ? 'badge-tle'
                       : v === 'MLE' ? 'badge-mle'
                       : v ? 'badge-sys' : 'badge-pending';
-            const txt = v || 'PENDING';
+            const txt = v ? (VERDICT_KO[v] || v) : '채점중';
             return `<span class="badge ${cls}">${txt}</span>`;
         }
 
@@ -431,7 +506,7 @@
             setField('submitters', p.submitters);
             setField('total_submissions', p.total_submissions);
             setField('ac_count', p.ac_count);
-            setField('correct_rate', Math.round(p.correct_rate * 100) + ' %');
+            setField('correct_rate', Math.round(p.correct_rate * 100));
 
             // 마지막 채점(fetch) 시점 — HH:MM 절대시각 + 서버 기준 상대시각
             const fetchEl = card.querySelector('[data-field="last_fetched_at"]');
@@ -503,6 +578,18 @@
         }
 
         let inflight = false;
+        function renderRooms(rooms) {
+            const strip = document.getElementById('roomStrip');
+            if (!strip) return;
+            for (const r of rooms) {
+                const cell = strip.querySelector(`.room-cell[data-room="${r.room}"]`);
+                if (!cell) continue;
+                cell.querySelector('[data-field="enrolled"]').textContent = r.enrolled;
+                cell.querySelector('[data-field="checked_in"]').textContent = r.checked_in;
+                cell.querySelector('[data-field="checked_out"]').textContent = r.checked_out;
+            }
+        }
+
         async function tick() {
             if (inflight) return;
             inflight = true;
@@ -516,6 +603,7 @@
                 LATEST_SERVER_TIME = d.server_time || null;
                 updateClocks(d.server_time);
                 (d.problems || []).forEach(renderProblem);
+                renderRooms(d.rooms || []);
             } catch (e) {
                 console.error('poll error:', e);
             } finally {

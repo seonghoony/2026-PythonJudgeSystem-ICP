@@ -641,7 +641,7 @@ def log_exam_check_out(student_id: str, lecture_id: int, exam_type: str, usernam
     attendance = get_student_attendance(student_id, lecture_id, exam_type)
     if attendance and attendance['check_out_time']:
         return False
-        
+
     sql = """
     UPDATE exam_attendance
     SET check_out_time = NOW(), check_out_by = %s
@@ -649,3 +649,46 @@ def log_exam_check_out(student_id: str, lecture_id: int, exam_type: str, usernam
     """
     rowcount = execute_query(sql, (username, student_id, lecture_id, exam_type), commit=True)
     return rowcount > 0
+
+def get_student_exam_room(student_id: str, lecture_id: int, exam_type: str) -> Optional[str]:
+    sql = """
+    SELECT room FROM exam_rooms
+    WHERE student_id = %s AND lecture_id = %s AND exam_type = %s
+    """
+    rows = execute_query(sql, (student_id, lecture_id, exam_type), fetch=True)
+    return rows[0]["room"] if rows else None
+
+def get_user_exam_rooms(username: str, lecture_id: int, exam_type: str) -> List[str]:
+    sql = """
+    SELECT room FROM exam_room_staff
+    WHERE username = %s AND lecture_id = %s AND exam_type = %s
+    """
+    rows = execute_query(sql, (username, lecture_id, exam_type), fetch=True) or []
+    return [r["room"] for r in rows]
+
+def get_exam_room_attendance_stats(lecture_id: int, exam_type: str) -> List[Dict]:
+    """Per-room (enrolled, checked_in, checked_out) counts for a given exam."""
+    sql = """
+    SELECT r.room,
+           COUNT(*) AS enrolled,
+           SUM(CASE WHEN a.check_in_time  IS NOT NULL THEN 1 ELSE 0 END) AS checked_in,
+           SUM(CASE WHEN a.check_out_time IS NOT NULL THEN 1 ELSE 0 END) AS checked_out
+    FROM exam_rooms r
+    LEFT JOIN exam_attendance a
+      ON a.student_id = r.student_id
+     AND a.lecture_id = r.lecture_id
+     AND a.exam_type  = r.exam_type
+    WHERE r.lecture_id = %s AND r.exam_type = %s
+    GROUP BY r.room
+    ORDER BY r.room
+    """
+    rows = execute_query(sql, (lecture_id, exam_type), fetch=True) or []
+    return [
+        {
+            "room": r["room"],
+            "enrolled": int(r["enrolled"] or 0),
+            "checked_in": int(r["checked_in"] or 0),
+            "checked_out": int(r["checked_out"] or 0),
+        }
+        for r in rows
+    ]

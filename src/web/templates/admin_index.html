@@ -104,9 +104,10 @@
 <body>
     <nav>
         <h1>PythonJudgeSystem Admin</h1>
-        <div class="who">로그인: <strong>{{ username }}</strong>{% if is_admin %} · 관리자{% else %} · 조교{% endif %}</div>
+        <div class="who">로그인: <strong>{{ username }}</strong>{% if is_admin %} · 관리자{% elif is_part_time %} · 시험감독{% else %} · 조교{% endif %}</div>
     </nav>
     <main>
+        {% if not is_part_time %}
         <section>
             <h2>실시간 모니터링</h2>
             <div class="tiles">
@@ -122,17 +123,19 @@
                 {% endfor %}
             </div>
         </section>
+        {% endif %}
 
         <section>
             <h2>출석</h2>
             <div class="tiles">
-                <a class="tile" href="/admin/attendance">
+                <a class="tile{% if is_part_time %} primary{% endif %}" href="/admin/attendance">
                     <div class="title">입·퇴실 체크</div>
                     <div class="sub">시험 응시자 출결 기록 <code>/admin/attendance</code></div>
                 </a>
             </div>
         </section>
 
+        {% if not is_part_time %}
         <section>
             <h2>분반별 로스터</h2>
             {% if lectures %}
@@ -148,6 +151,7 @@
             <div class="muted">접근 가능한 분반이 없습니다.</div>
             {% endif %}
         </section>
+        {% endif %}
     </main>
 </body>
 </html>

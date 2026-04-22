@@ -413,7 +413,7 @@
                     <label for="lectureSelect">과목 (Lecture)</label>
                     <select id="lectureSelect">
                         {% for lec in lectures %}
-                            <option value="{{ lec.id }}">{{ lec.name }}</option>
+                            <option value="{{ lec.id }}"{% if lec.id == 86347 %} selected{% endif %}>{{ lec.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -455,6 +455,11 @@
 
             <div class="status-badge status-none" id="attendanceStatus">출석 기록 없음</div>
 
+            <div class="status-badge status-none" id="roomBadge" style="display:none; margin-top: 4px;">시험장 —</div>
+            <div id="roomWarn" style="display:none; color: #991b1b; background: #fee2e2; border-radius: 10px; padding: 10px 14px; font-size: 0.9rem; margin-top: 4px; text-align: center;">
+                담당 시험장이 아닙니다. 출·퇴실 처리 불가.
+            </div>
+
             <div class="actions">
                 <button class="btn btn-checkin" id="btnCheckIn" onclick="submitAttendance('check_in')">
                     <div class="loader" id="loaderCheckIn"></div>
@@ -485,8 +490,11 @@
         const profileDept = document.getElementById('profileDept');
         const profilePhone = document.getElementById('profilePhone');
         const attendanceStatus = document.getElementById('attendanceStatus');
-        
+        const roomBadge = document.getElementById('roomBadge');
+        const roomWarn = document.getElementById('roomWarn');
+
         let currentStudentId = null;
+        let currentCanMark = false;
         let searchTimeout = null;
         let activeIndex = -1;
 
@@ -520,7 +528,10 @@
             searchInput.value = '';
             autocompleteList.style.display = 'none';
             profileCard.style.display = 'none';
+            roomBadge.style.display = 'none';
+            roomWarn.style.display = 'none';
             currentStudentId = null;
+            currentCanMark = false;
             activeIndex = -1;
             clearBtn.style.display = 'none';
             searchInput.focus();
@@ -641,9 +652,22 @@
                         document.getElementById('profilePhoneLink').style.pointerEvents = 'none';
                     }
                     
-                    document.getElementById('btnCheckIn').disabled = false;
-                    document.getElementById('btnCheckOut').disabled = false;
-                    
+                    currentCanMark = !!data.can_mark;
+
+                    if (data.student_room) {
+                        roomBadge.textContent = `시험장: ${data.student_room}`;
+                        roomBadge.className = 'status-badge ' + (currentCanMark ? 'status-in' : 'status-out');
+                        roomBadge.style.display = 'inline-block';
+                    } else {
+                        roomBadge.textContent = '시험장 배정 없음';
+                        roomBadge.className = 'status-badge status-out';
+                        roomBadge.style.display = 'inline-block';
+                    }
+                    roomWarn.style.display = currentCanMark ? 'none' : 'block';
+
+                    document.getElementById('btnCheckIn').disabled = !currentCanMark;
+                    document.getElementById('btnCheckOut').disabled = !currentCanMark;
+
                     if (!att) {
                         attendanceStatus.textContent = '출석 기록 없음 (미출석)';
                         attendanceStatus.className = 'status-badge status-none';
@@ -655,9 +679,9 @@
                         const byStr = att.check_out_by ? ` (by ${att.check_out_by})` : '';
                         attendanceStatus.innerHTML = `퇴실 완료: ${att.check_out_time.substring(11, 16)}${byStr}`;
                         attendanceStatus.className = 'status-badge status-out';
-                        document.getElementById('btnCheckOut').disabled = true; 
+                        if (currentCanMark) document.getElementById('btnCheckOut').disabled = true;
                     }
-                    
+
                     profileCard.style.display = 'flex';
                 })
                 .catch(err => {

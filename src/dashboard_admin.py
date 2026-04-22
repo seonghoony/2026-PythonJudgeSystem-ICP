@@ -1,9 +1,11 @@
 import argparse
+import binascii
 import sys
 import json
 import os
 import secrets
 import yaml
+from base64 import b64decode
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -11,9 +13,42 @@ from dotenv import load_dotenv
 import uvicorn
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, status
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.security.utils import get_authorization_scheme_param
 from pydantic import BaseModel
+
+
+class HTTPBasicUTF8(HTTPBasic):
+    """HTTPBasic variant that decodes Authorization header as UTF-8 (RFC 7617).
+
+    Why: the stock fastapi.security.HTTPBasic decodes as ASCII, so non-ASCII
+    usernames (e.g. Korean TA names) always fail with 401.
+    """
+
+    async def __call__(self, request: Request):  # type: ignore[override]
+        authorization = request.headers.get("Authorization")
+        scheme, param = get_authorization_scheme_param(authorization)
+        if not authorization or scheme.lower() != "basic":
+            if self.auto_error:
+                raise self.make_not_authenticated_error()
+            return None
+        try:
+            data = b64decode(param).decode("utf-8")
+        except (ValueError, UnicodeDecodeError, binascii.Error) as e:
+            raise self.make_not_authenticated_error() from e
+        username, separator, password = data.partition(":")
+        if not separator:
+            raise self.make_not_authenticated_error()
+        return HTTPBasicCredentials(username=username, password=password)
+
+    def make_not_authenticated_error(self) -> HTTPException:
+        return HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": 'Basic realm="{}", charset="UTF-8"'.format(self.realm or "")},
+        )
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -22,6 +57,7 @@ from src.infrastructure import database as db
 load_dotenv()
 
 app = FastAPI(title="PythonJudgeSystem Admin Dashboard")
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "web" / "static")), name="static")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "web" / "templates"))
 
 def parse_json(value):
@@ -32,7 +68,7 @@ def parse_json(value):
         return None
 templates.env.filters["parse_json"] = parse_json
 
-security = HTTPBasic()
+security = HTTPBasicUTF8()
 
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     correct_username = os.environ.get("SNOWBOARD_USER", "")
@@ -69,12 +105,34 @@ def log_dashboard_access(request: Request, username: str = Depends(verify_creden
     db.log_ta_access(username, path)
     return username
 
+def _is_part_time_user(username: str) -> bool:
+    # 아르바이트(시험감독)는 한글 실명 아이디로 생성되며, 정식 조교/관리자는 ASCII 아이디를 쓴다.
+    # 따라서 non-ASCII 여부만으로 part-time 여부를 판정한다.
+    return not username.isascii()
+
+def _forbid_part_time(username: str):
+    if _is_part_time_user(username):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="입퇴실 체크 기능만 이용 가능합니다.",
+        )
+
+def require_full_access(username: str = Depends(log_dashboard_access)):
+    _forbid_part_time(username)
+    return username
+
+def require_full_access_api(username: str = Depends(verify_credentials)):
+    _forbid_part_time(username)
+    return username
+
 def verify_lecture_access(request: Request, lecture_id: int, username: str = Depends(log_dashboard_access)):
     """Verify that the user has access to the specified lecture, logging access first."""
+    _forbid_part_time(username)
+
     admin_username = os.environ.get("SNOWBOARD_USER", "")
     if username == admin_username:
         return username
-        
+
     if not db.check_ta_lecture_access(username, lecture_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -87,6 +145,7 @@ async def admin_index(request: Request, username: str = Depends(log_dashboard_ac
     """모든 운영 기능으로 가는 진입점 랜딩 페이지."""
     admin_username = os.environ.get("SNOWBOARD_USER", "")
     is_admin = (username == admin_username)
+    is_part_time = _is_part_time_user(username)
 
     sql_lectures = "SELECT id, name FROM lectures ORDER BY id ASC"
     lectures = db.execute_query(sql_lectures, fetch=True) or []
@@ -113,6 +172,7 @@ async def admin_index(request: Request, username: str = Depends(log_dashboard_ac
         request=request, name="admin_index.html", context={
             "username": username,
             "is_admin": is_admin,
+            "is_part_time": is_part_time,
             "lectures": lectures,
             "exam_lectures": exam_lectures,
         }
@@ -215,7 +275,7 @@ async def admin_student_view(request: Request, lecture_id: int, student_id: str,
     )
 
 @app.get("/admin/feed", response_class=HTMLResponse)
-async def admin_feed_view(request: Request, username: str = Depends(log_dashboard_access)):
+async def admin_feed_view(request: Request, username: str = Depends(require_full_access)):
     admin_username = os.environ.get("SNOWBOARD_USER", "")
     allowed_lecture_ids = None
     if username != admin_username:
@@ -286,7 +346,7 @@ async def admin_feed_view(request: Request, username: str = Depends(log_dashboar
     )
 
 @app.get("/admin/api/feed")
-async def api_feed_data(username: str = Depends(verify_credentials)):
+async def api_feed_data(username: str = Depends(require_full_access_api)):
     """Returns JSON data for AJAX polling to prevent UI flicker."""
     admin_username = os.environ.get("SNOWBOARD_USER", "")
     allowed_lecture_ids = None
@@ -402,7 +462,7 @@ def _load_exam_config(lecture_id: int):
             display_name = name
         problem_meta.append({
             "assignment_id": aid,
-            "label": f"P{idx + 1}",
+            "label": f"실기 {idx + 1}",
             "name": display_name,
         })
 
@@ -422,6 +482,9 @@ async def admin_exam_view(request: Request, lecture_id: int, _: str = Depends(ve
     lecture_name = lecture_rows[0]["name"] if lecture_rows else f"Lecture {lecture_id}"
 
     cfg = _load_exam_config(lecture_id)
+    # 초기 셸 렌더링 용도: 시험장 섹션 틀을 서버가 먼저 심어두고,
+    # 실시간 숫자 3개(응시/출석/퇴실)는 JS 폴링으로 갱신.
+    room_stats = db.get_exam_room_attendance_stats(lecture_id, "midterm")
 
     return templates.TemplateResponse(
         request=request, name="admin_exam.html", context={
@@ -431,6 +494,7 @@ async def admin_exam_view(request: Request, lecture_id: int, _: str = Depends(ve
             "window_end": cfg["window_end"],
             "class_size": cfg["class_size"],
             "problems": cfg["problems"],
+            "rooms": room_stats,
         }
     )
 
@@ -479,6 +543,7 @@ async def api_exam_data(lecture_id: int, _: str = Depends(verify_lecture_access)
         "window_start": cfg["window_start"],
         "window_end": cfg["window_end"],
         "problems": problems_out,
+        "rooms": db.get_exam_room_attendance_stats(lecture_id, "midterm"),
     }
 
 @app.get("/admin/photo/{student_id}")
@@ -518,20 +583,47 @@ async def api_attendance_search(q: str, lecture_id: int, _: str = Depends(verify
     students = db.search_students_by_id(q, lecture_id)
     return students
 
+def _enforce_room_match(username: str, student_id: str, lecture_id: int, exam_type: str):
+    """Raise 403 unless the caller's exam_room_staff assignment matches the student's room.
+
+    Applies uniformly — admin has no bypass. The admin account must be registered
+    in exam_room_staff for whichever room(s) they proctor.
+    """
+    student_room = db.get_student_exam_room(student_id, lecture_id, exam_type)
+    if not student_room:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="이 학생은 시험장 배정이 없습니다.",
+        )
+    user_rooms = db.get_user_exam_rooms(username, lecture_id, exam_type)
+    if student_room not in user_rooms:
+        allowed = ", ".join(user_rooms) if user_rooms else "없음"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"이 학생은 [{student_room}] 응시자입니다. 담당 시험장: {allowed}",
+        )
+
 @app.get("/admin/api/attendance/student_info")
-async def api_attendance_student_info(student_id: str, lecture_id: int, exam_type: str, _: str = Depends(verify_credentials)):
+async def api_attendance_student_info(student_id: str, lecture_id: int, exam_type: str, username: str = Depends(verify_credentials)):
     student = db.get_student_for_exam(student_id, lecture_id)
     if not student:
         raise HTTPException(status_code=404, detail="Student not found in this lecture")
-    
+
     attendance = db.get_student_attendance(student_id, lecture_id, exam_type)
+    student_room = db.get_student_exam_room(student_id, lecture_id, exam_type)
+    user_rooms = db.get_user_exam_rooms(username, lecture_id, exam_type)
+    can_mark = student_room is not None and student_room in user_rooms
     return {
         "student": student,
-        "attendance": attendance
+        "attendance": attendance,
+        "student_room": student_room,
+        "user_rooms": user_rooms,
+        "can_mark": can_mark,
     }
 
 @app.post("/admin/api/attendance/check_in")
 async def api_attendance_check_in(req: AttendanceRequest, username: str = Depends(verify_credentials)):
+    _enforce_room_match(username, req.student_id, req.lecture_id, req.exam_type)
     success = db.log_exam_check_in(req.student_id, req.lecture_id, req.exam_type, username)
     if not success:
         return JSONResponse(status_code=400, content={"message": "이미 처리됨 (Already checked in)"})
@@ -539,6 +631,7 @@ async def api_attendance_check_in(req: AttendanceRequest, username: str = Depend
 
 @app.post("/admin/api/attendance/check_out")
 async def api_attendance_check_out(req: AttendanceRequest, username: str = Depends(verify_credentials)):
+    _enforce_room_match(username, req.student_id, req.lecture_id, req.exam_type)
     success = db.log_exam_check_out(req.student_id, req.lecture_id, req.exam_type, username)
     if not success:
         return JSONResponse(status_code=400, content={"message": "이미 처리됨 (Already checked out or not checked in)"})

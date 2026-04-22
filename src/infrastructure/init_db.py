@@ -123,6 +123,28 @@ DDL_STATEMENTS = [
         FOREIGN KEY (username) REFERENCES ta_accounts(username) ON DELETE CASCADE,
         FOREIGN KEY (lecture_id) REFERENCES lectures(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+
+    """
+    CREATE TABLE IF NOT EXISTS exam_rooms (
+        lecture_id BIGINT NOT NULL,
+        exam_type VARCHAR(20) NOT NULL,
+        student_id VARCHAR(50) NOT NULL,
+        room VARCHAR(50) NOT NULL,
+        PRIMARY KEY (lecture_id, exam_type, student_id),
+        FOREIGN KEY (lecture_id) REFERENCES lectures(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+
+    """
+    CREATE TABLE IF NOT EXISTS exam_room_staff (
+        lecture_id BIGINT NOT NULL,
+        exam_type VARCHAR(20) NOT NULL,
+        username VARCHAR(50) NOT NULL,
+        room VARCHAR(50) NOT NULL,
+        PRIMARY KEY (lecture_id, exam_type, username, room),
+        FOREIGN KEY (lecture_id) REFERENCES lectures(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """
 ]
 

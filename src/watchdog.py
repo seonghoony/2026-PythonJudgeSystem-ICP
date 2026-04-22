@@ -41,9 +41,25 @@ def run_watchdog():
             raw_blacklist = config.get("blacklist", [])
             blacklist = [int(x) for x in raw_blacklist]
             whitelist = [int(x) for x in commited_whitelist] if commited_whitelist else []
-            
+
             now = datetime.now()
             now_pd = pd.Timestamp.now()
+
+            # 중간고사 등 exam 문항은 window_end가 지나면 모니터링/알람 대상에서 제외한다.
+            exam_cfg = config.get("exam", {}) or {}
+            ended_exam_problems = set()
+            for _lec_id, exam_entry in exam_cfg.items():
+                window_end = exam_entry.get("window_end")
+                problems = exam_entry.get("problems", []) or []
+                if not window_end:
+                    continue
+                try:
+                    end_dt = pd.to_datetime(window_end)
+                except Exception:
+                    continue
+                if end_dt < now_pd:
+                    for pid in problems:
+                        ended_exam_problems.add(int(pid))
             
             stalled_assignments = []
             
@@ -70,6 +86,8 @@ def run_watchdog():
                             pass
                             
                     if aid_int in blacklist:
+                        continue
+                    if aid_int in ended_exam_problems:
                         continue
                     if not week_started:
                         continue

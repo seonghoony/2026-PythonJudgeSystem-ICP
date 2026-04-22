@@ -4,6 +4,8 @@
 tmp/
 # audit reports
 out/
+# ad-hoc scripts
+scripts/
 # The Reference. PJS for ICP Spring 2025
 PythonJudgeSystem/
 downloaded_instructions/

@@ -101,7 +101,8 @@ DDL_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS ta_accounts (
         username VARCHAR(50) PRIMARY KEY,
-        password_plain VARCHAR(255) NOT NULL,
+        name VARCHAR(100) DEFAULT NULL,
+        password_plain VARCHAR(255) DEFAULT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,

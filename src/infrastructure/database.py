@@ -576,8 +576,11 @@ def get_global_feed(limit: int = 50, allowed_lecture_ids: Optional[List[int]] = 
 # --- TA Feature Support ---
 
 def verify_ta_account(username: str, password_plain: str) -> bool:
-    """Verify TA account credentials."""
-    sql = "SELECT 1 FROM ta_accounts WHERE username = %s AND password_plain = %s"
+    """Verify TA account credentials. Rows with NULL password_plain never match."""
+    sql = (
+        "SELECT 1 FROM ta_accounts "
+        "WHERE username = %s AND password_plain IS NOT NULL AND password_plain = %s"
+    )
     rows = execute_query(sql, (username, password_plain), fetch=True)
     return bool(rows)
 
@@ -611,11 +614,15 @@ def get_student_for_exam(student_id: str, lecture_id: int) -> Optional[Dict]:
     return rows[0] if rows else None
 
 def get_student_attendance(student_id: str, lecture_id: int, exam_type: str) -> Optional[Dict]:
-    """Get check-in/out times for a student."""
+    """Get check-in/out times for a student, including display name of the marker."""
     sql = """
-    SELECT check_in_time, check_out_time, check_in_by, check_out_by
-    FROM exam_attendance
-    WHERE student_id = %s AND lecture_id = %s AND exam_type = %s
+    SELECT a.check_in_time, a.check_out_time,
+           a.check_in_by,  COALESCE(i.name, a.check_in_by)  AS check_in_by_name,
+           a.check_out_by, COALESCE(o.name, a.check_out_by) AS check_out_by_name
+    FROM exam_attendance a
+    LEFT JOIN ta_accounts i ON i.username = a.check_in_by
+    LEFT JOIN ta_accounts o ON o.username = a.check_out_by
+    WHERE a.student_id = %s AND a.lecture_id = %s AND a.exam_type = %s
     """
     rows = execute_query(sql, (student_id, lecture_id, exam_type), fetch=True)
     return rows[0] if rows else None

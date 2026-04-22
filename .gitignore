@@ -2,6 +2,8 @@
 .env
 # cookies
 tmp/
+# audit reports
+out/
 # The Reference. PJS for ICP Spring 2025
 PythonJudgeSystem/
 downloaded_instructions/

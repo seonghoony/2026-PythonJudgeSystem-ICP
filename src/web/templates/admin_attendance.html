@@ -672,11 +672,13 @@
                         attendanceStatus.textContent = '출석 기록 없음 (미출석)';
                         attendanceStatus.className = 'status-badge status-none';
                     } else if (att.check_in_time && !att.check_out_time) {
-                        const byStr = att.check_in_by ? ` (by ${att.check_in_by})` : '';
+                        const who = att.check_in_by_name || att.check_in_by;
+                        const byStr = who ? ` (by ${who})` : '';
                         attendanceStatus.innerHTML = `입실 완료: ${att.check_in_time.substring(11, 16)}${byStr}`;
                         attendanceStatus.className = 'status-badge status-in';
                     } else if (att.check_in_time && att.check_out_time) {
-                        const byStr = att.check_out_by ? ` (by ${att.check_out_by})` : '';
+                        const who = att.check_out_by_name || att.check_out_by;
+                        const byStr = who ? ` (by ${who})` : '';
                         attendanceStatus.innerHTML = `퇴실 완료: ${att.check_out_time.substring(11, 16)}${byStr}`;
                         attendanceStatus.className = 'status-badge status-out';
                         if (currentCanMark) document.getElementById('btnCheckOut').disabled = true;

@@ -90,12 +90,15 @@ class DockerSandbox:
         
         mount_cmd = ""
         if submission_path.is_dir():
-            mount_cmd += f"-v {submission_path.absolute()}:/submission:ro "
+            # /submission은 매 채점마다 호스트의 임시 디렉토리에서 새로 생성되어 마운트되므로,
+            # 컨테이너 내부에서 학생 코드가 수정하더라도 다른 학생/실행에 영향이 없다.
+            # rw로 마운트해야 run_before.py 메커니즘이 wrapper 파일을 쓸 수 있다.
+            mount_cmd += f"-v {submission_path.absolute()}:/submission:rw "
         else:
             mount_cmd += f"-v {submission_path.absolute()}:/Target.py:ro "
             
         mount_cmd += f"-v {assignment_dir.absolute()}:/assignment:ro "
-        
+
         launcher_path = Path("src/utils/launcher_script.py").absolute()
         mount_cmd += f"-v {launcher_path}:/launcher.py:ro "
         

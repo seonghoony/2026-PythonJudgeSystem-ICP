@@ -789,10 +789,7 @@ def cmd_monitor(args):
                             else:
                                 if aid_int in blacklist:
                                     continue
-                                
-                                if not week_started:
-                                    continue
-                                    
+
                                 if aid_int in whitelist:
                                     should_process = True
                                 else:

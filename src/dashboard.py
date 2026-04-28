@@ -89,7 +89,7 @@ async def dashboard_view(request: Request, lecture_id: int):
 
     assignments = []
     
-    sql = "SELECT id, name, last_fetched_at FROM assignments WHERE lecture_id = %s AND (week_start IS NULL OR week_start <= NOW()) ORDER BY id ASC"
+    sql = "SELECT id, name, last_fetched_at FROM assignments WHERE lecture_id = %s ORDER BY id ASC"
     rows = db.execute_query(sql, (lecture_id,), fetch=True)
     
     for row in (rows or []):

@@ -41,9 +41,23 @@ def sanitize_traceback(text: str) -> str:
 def sanitize_system_error(error_msg: str) -> tuple[str, bool]:
     """
     Translates raw system errors into student-friendly Korean comments.
-    Returns a tuple: (sanitized_comment, should_alert_admin)
+    Returns a tuple: (sanitized_comment, should_alert_admin).
+
+    Branches stay concrete enough that the student can act without contacting a TA.
+    Only true infrastructure failures (Launcher/Grader/Parse) raise should_alert.
     """
-    if "Execution Timed Out" in error_msg:
-        return " (시스템 안내: 실행 시간이 초과되었습니다. 무한 루프가 발생했거나 연산량이 너무 많지 않은지 확인해주세요.)", False
-    
-    return " (시스템 오류가 발생했습니다. 담당 조교에게 문의해주세요.)", True
+    e = error_msg or ""
+
+    if "Time Limit" in e or "Timed Out" in e:
+        return ("\n(시간 초과: 무한 루프가 있거나 연산량이 너무 많습니다.)", False)
+    if "Output Limit" in e:
+        return ("\n(출력 한도 초과: 디버그 print를 제거하거나 반복문 안의 출력을 줄여주세요.)", False)
+    if "Memory Limit" in e or "exit 137" in e or "OOM" in e:
+        return ("\n(메모리 한도 초과: 자료구조 크기를 줄이거나 불필요한 누적을 제거해주세요.)", False)
+    if "Launcher Crashed" in e or "Malformed Output" in e:
+        return (f"\n(채점기 인프라 오류 — 학생 코드와 무관할 수 있습니다. 동일 코드를 한 번 더 제출해 보세요. 진단: {e[:160]})", True)
+    if "Grader Crashed" in e or "Special Judge Output Format Error" in e:
+        return (f"\n(채점기 그레이더 충돌 — 출제자에게 자동 알림 전송됨. 진단: {e[:160]})", True)
+    if "Failed to parse" in e:
+        return ("\n(채점 결과 파싱 오류 — 동일 코드를 한 번 더 제출해주세요.)", True)
+    return (f"\n(분류되지 않은 채점 오류: {e[:200]})", True)

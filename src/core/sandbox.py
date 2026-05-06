@@ -104,7 +104,7 @@ class DockerSandbox:
         
         net_flag = "--net none" if resources.network_disabled else ""
         
-        env_cmd = f"-e JUDGE_MODE={mode} -e JUDGE_TIMEOUT={resources.timeout} "
+        env_cmd = f"-e JUDGE_MODE={mode} -e JUDGE_TIMEOUT={resources.timeout} -e PYTHONDONTWRITEBYTECODE=1 "
         if env_vars:
             for k, v in env_vars.items():
                 env_cmd += f"-e {k}='{v}' "

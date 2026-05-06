@@ -3,6 +3,7 @@ import sys
 import subprocess
 import json
 import glob
+import tempfile
 import traceback
 from pathlib import Path
 
@@ -15,6 +16,51 @@ TIMEOUT = int(os.environ.get("JUDGE_TIMEOUT", "5"))
 
 STUDENT_ID = os.environ.get("STUDENT_ID", "")
 STUDENT_NAME = os.environ.get("STUDENT_NAME", "")
+
+# 학생 stdout/stderr는 메모리 파이프가 아닌 tmpfile로 흘려보내고, 끝에서 첫 N바이트만 읽는다.
+# 폭주(while True: print(...))로 launcher RSS가 부풀어 OOM(exit 137) 나는 사고를 막기 위함.
+STUDENT_STREAM_CAP = 64 * 1024
+GRADER_STREAM_CAP = 256 * 1024
+
+
+def _run_with_caps(cmd, *, stdin_bytes, timeout, cap, **popen_kwargs):
+    """
+    Popen + tmpfile redirect로 stdout/stderr를 OS 레벨에서 흘려보내고, 종료 후 cap 바이트까지만 읽는다.
+    반환: dict(stdout, stderr, exit_code, timed_out, truncated_stdout, truncated_stderr)
+    """
+    with tempfile.NamedTemporaryFile(dir="/tmp") as so, \
+         tempfile.NamedTemporaryFile(dir="/tmp") as se:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE if stdin_bytes is not None else subprocess.DEVNULL,
+            stdout=so,
+            stderr=se,
+            **popen_kwargs,
+        )
+        timed_out = False
+        try:
+            proc.communicate(input=stdin_bytes, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                proc.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            timed_out = True
+
+        so.seek(0); se.seek(0)
+        so_raw = so.read(cap + 1)
+        se_raw = se.read(cap + 1)
+        truncated_out = len(so_raw) > cap
+        truncated_err = len(se_raw) > cap
+        return {
+            "stdout": so_raw[:cap].decode("utf-8", "replace"),
+            "stderr": se_raw[:cap].decode("utf-8", "replace"),
+            "exit_code": 124 if timed_out else proc.returncode,
+            "timed_out": timed_out,
+            "truncated_stdout": truncated_out,
+            "truncated_stderr": truncated_err,
+        }
 
 def find_entry_point():
     """Finds the python script to run."""
@@ -101,15 +147,17 @@ def run_standard_judge(entry_point):
             actual_entry = entry_point
 
             if pre_script.exists():
+                # wrapper는 학생 코드 import를 한 번 감싸 run_before.py와 globals를 공유시킨다.
+                # 트레이스백은 표준 채점기와 동일하게 CPython 원본만 stderr로 흘려보낸다.
                 wrapper_content = f"""
 import sys
-from pathlib import Path
+import traceback
 
 try:
     with open("{pre_script}", "r") as f:
         exec(f.read(), globals())
-except Exception as e:
-    print(f"Error in run_before.py: {{e}}", file=sys.stderr)
+except Exception:
+    traceback.print_exc()
     sys.exit(1)
 
 try:
@@ -117,45 +165,46 @@ try:
     with open("{entry_point}", "r") as f:
         code = compile(f.read(), "{entry_point}", 'exec')
         exec(code, globals())
-except Exception as e:
-    print(f"Runtime Error: {{e}}", file=sys.stderr)
-    import traceback
+except Exception:
     traceback.print_exc()
     sys.exit(1)
 """
-                wrapper_path = entry_point.parent / "_wrapper_run_before.py"
+                # wrapper는 /tmp에 둔다. /submission에 두면 학생 traceback에 wrapper 프레임이 섞이지만
+                # /tmp에 두면 host의 sanitize_traceback("/submission/" 외 프레임 제거) 이 자동으로 정리해 준다.
+                wrapper_path = Path("/tmp/_wrapper_run_before.py")
                 wrapper_path.write_text(wrapper_content)
                 actual_entry = wrapper_path
 
-            proc = subprocess.run(
+            run = _run_with_caps(
                 [sys.executable, str(actual_entry)],
-                input=input_data,
-                capture_output=True,
-                text=True,
+                stdin_bytes=input_data.encode("utf-8"),
                 timeout=TIMEOUT,
+                cap=STUDENT_STREAM_CAP,
                 cwd=str(entry_point.parent),
                 env={**os.environ, "STUDENT_ID": STUDENT_ID, "STUDENT_NAME": STUDENT_NAME}
             )
-            
-            res["stdout"] = proc.stdout
-            res["stderr"] = proc.stderr
-            res["exit_code"] = proc.returncode
-            
-            if proc.returncode != 0:
+
+            res["stdout"] = run["stdout"]
+            res["stderr"] = run["stderr"]
+            res["exit_code"] = run["exit_code"]
+
+            if run["timed_out"]:
+                res["message"] = "Time Limit Exceeded"
+            elif run["truncated_stdout"] or run["truncated_stderr"]:
+                # 캡 초과 = 디버그 print 폭주 / 무한출력. exit code는 그대로 두되 verdict이 OLE로 분류된다.
+                res["message"] = "Output Limit Exceeded"
+            elif run["exit_code"] != 0:
                 res["message"] = "Runtime Error"
-                if "RecursionError" in proc.stderr:
+                if "RecursionError" in run["stderr"]:
                     res["message"] = "Recursion Error"
             else:
                 # 호스트의 run_after.py가 별도 검증할 수 있지만, launcher는 우선 정확 일치로 판정한다.
                 expected = output_file.read_text() if output_file.exists() else ""
-                if proc.stdout.strip() == expected.strip():
+                if run["stdout"].strip() == expected.strip():
                     res["is_correct"] = True
                 else:
                     res["message"] = "Wrong Answer"
 
-        except subprocess.TimeoutExpired:
-            res["message"] = "Time Limit Exceeded"
-            res["exit_code"] = 124
         except Exception as e:
             res["message"] = f"System Error: {str(e)}"
             res["exit_code"] = -1
@@ -190,34 +239,39 @@ def run_special_judge(entry_point):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(entry_point.parent) + os.pathsep + env.get("PYTHONPATH", "")
 
-    try:
-        res = subprocess.run(
-            [sys.executable, str(grader_script)],
-            timeout=TIMEOUT,
-            capture_output=True,
-            text=True,
-            env=env,
-            cwd=str(entry_point.parent)
-        )
+    run = _run_with_caps(
+        [sys.executable, str(grader_script)],
+        stdin_bytes=None,
+        timeout=TIMEOUT,
+        cap=GRADER_STREAM_CAP,
+        env=env,
+        cwd=str(entry_point.parent),
+    )
 
-        print("___JUDGE_RESULT_START___")
+    print("___JUDGE_RESULT_START___")
+    if run["timed_out"]:
+        print(json.dumps([{
+            "test_case_id": "1",
+            "message": "Time Limit Exceeded",
+            "is_correct": False,
+            "exit_code": 124,
+        }]))
+    elif run["exit_code"] != 0 and not run["stdout"].strip():
+        # 그래더가 마커 없이 죽었음 — host의 special_judge가 분류할 수 있도록 합성 마커 JSON 출력.
+        print(json.dumps([{
+            "test_case_id": "1",
+            "message": f"Grader Crashed (exit {run['exit_code']})",
+            "stderr": run["stderr"][-2000:],
+            "is_correct": False,
+            "exit_code": run["exit_code"],
+        }]))
+    else:
+        # 그래더 stdout이 이미 마커 없이 JSON 결과만 들어 있다고 가정 (evaluator.py가 print(json.dumps(results))).
+        print(run["stdout"])
+    print("___JUDGE_RESULT_END___")
 
-        if res.returncode != 0:
-            if not res.stdout.strip():
-                 print(json.dumps([{"message": f"Grader Crashed (Exit {res.returncode})", "stderr": res.stderr, "is_correct": False, "exit_code": res.returncode}]))
-            else:
-                 print(res.stdout)
-        else:
-             print(res.stdout)
-        print("___JUDGE_RESULT_END___")
-
-        if res.stderr:
-            print(f"[Launcher] Grader Stderr: {res.stderr}", file=sys.stderr)
-
-    except subprocess.TimeoutExpired:
-        print("___JUDGE_RESULT_START___")
-        print(json.dumps([{"message": "Time Limit Exceeded", "is_correct": False}]))
-        print("___JUDGE_RESULT_END___")
+    if run["stderr"]:
+        print(f"[Launcher] Grader Stderr: {run['stderr']}", file=sys.stderr)
 
 def main():
     try:

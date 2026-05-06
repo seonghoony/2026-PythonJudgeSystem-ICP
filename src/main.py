@@ -354,6 +354,18 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                     )
     
                     current_verdict = "AC"
+                    # 메시지 → verdict 매핑. 매핑된 메시지를 만나면 즉시 break (우선순위 높음).
+                    # WA는 break 없이 후속 testcase에서 TLE/MLE/OLE 같은 격상 verdict이 발견되면 덮어씌움.
+                    MSG_TO_VERDICT = [
+                        ("Time Limit", "TLE"),
+                        ("Memory Limit", "MLE"),
+                        ("Output Limit", "OLE"),
+                        ("Recursion", "RTE"),
+                        ("Launcher Crashed", "SYS"),
+                        ("Grader Crashed", "SYS"),
+                        # launcher 내부 예외(테스트케이스 셋업 중)는 학생 코드와 무관 — RTE 오인 방지.
+                        ("System Error", "SYS"),
+                    ]
                     if result.system_error:
                         current_verdict = "SYS"
                     else:
@@ -362,14 +374,16 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                             if not res.is_correct:
                                 is_pass = False
                                 msg = res.message or ""
-                                if "Time Limit" in msg:
-                                    current_verdict = "TLE"
+                                matched = False
+                                for needle, v in MSG_TO_VERDICT:
+                                    if needle in msg:
+                                        current_verdict = v
+                                        matched = True
+                                        break
+                                if matched:
                                     break
-                                elif "Memory Limit" in msg:
-                                    current_verdict = "MLE"
-                                    break
-                                elif "Error" in msg or "Exception" in msg: 
-                                    current_verdict = "RTE" 
+                                elif "Error" in msg or "Exception" in msg:
+                                    current_verdict = "RTE"
                                     break
                                 else:
                                     current_verdict = "WA"
@@ -384,8 +398,12 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                     else:
                         comment = f"{attempt_count}번째 시도, 오답입니다."
     
+                        from src.utils.sanitizer import sanitize_traceback
                         for res in result.results:
                              if not res.is_correct:
+                                 # admin/student 양쪽이 동일한 형태의 traceback을 보도록 sanitize 후 저장.
+                                 sanitized_tb = sanitize_traceback(res.stderr or "")
+
                                  # 첫 실패 케이스만 DB에 디테일 저장 (Admin debug용).
                                  if not failure_details_json:
                                      import json
@@ -394,17 +412,14 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                                          "input": getattr(res, "input_data", None),
                                          "actual_output": res.stdout,
                                          "expected_output": getattr(res, "expected_output", None),
-                                         "traceback": res.stderr,
+                                         "traceback": sanitized_tb,
                                          "message": res.message
                                      }
                                      failure_details_json = json.dumps(details, ensure_ascii=False)
 
                                  # 학생 피드백은 stderr가 있을 때만 traceback을 보여주고, 'Wrong Answer'/'TLE' 같은 message는 따로 노출하지 않는다.
-                                 raw_error = (res.stderr or "").strip()
-
-                                 if raw_error:
-                                     from src.utils.sanitizer import sanitize_traceback
-                                     clean_trace = sanitize_traceback(raw_error)
+                                 if sanitized_tb.strip():
+                                     clean_trace = sanitized_tb
 
                                      if len(clean_trace) > 1000:
                                          clean_trace = clean_trace[:1000] + "\n... (Truncated)"

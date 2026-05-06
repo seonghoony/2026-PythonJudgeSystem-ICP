@@ -44,24 +44,43 @@ class StandardJudge(JudgeEngine):
 
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
+            exit_code = raw_result.get("exit_code", 0)
 
             results_json = []
-            try:
-                start_marker = "___JUDGE_RESULT_START___"
-                end_marker = "___JUDGE_RESULT_END___"
+            start_marker = "___JUDGE_RESULT_START___"
+            end_marker = "___JUDGE_RESULT_END___"
 
-                if start_marker in stdout and end_marker in stdout:
+            if start_marker in stdout and end_marker in stdout:
+                try:
                     json_str = stdout.split(start_marker)[1].split(end_marker)[0]
                     results_json = json.loads(json_str)
-                else:
-                    # Launcher가 JSON을 출력하기 전에 죽은 경우의 fallback.
-                    if raw_result["exit_code"] == 124:
-                         eval_result.system_error = "Execution Timed Out (Container Level)"
-                    else:
-                         eval_result.system_error = f"Malformed Output from Launcher.\nStdout: {stdout[:200]}...\nStderr: {stderr[:200]}..."
+                except json.JSONDecodeError:
+                    eval_result.system_error = "Failed to parse judge results."
                     return eval_result
-            except json.JSONDecodeError:
-                eval_result.system_error = "Failed to parse judge results."
+            else:
+                # Launcher가 JSON 마커를 찍기 전에 죽었음. exit code로 카테고리 분류해서
+                # per-testcase 결과를 합성해 main.py가 정상 verdict 매핑을 할 수 있게 한다.
+                code_to_msg = {
+                    124: "Time Limit Exceeded",
+                    137: "Memory Limit Exceeded",
+                }
+                if exit_code in code_to_msg:
+                    msg = code_to_msg[exit_code]
+                    # 학생 사유이므로 system_error는 비워서 Telegram 알림이 울리지 않게 한다.
+                    eval_result.system_error = None
+                else:
+                    msg = f"Launcher Crashed (exit {exit_code})"
+                    eval_result.system_error = (
+                        f"{msg}. Stdout tail: {stdout[-300:]!r}\nStderr tail: {stderr[-300:]!r}"
+                    )
+                eval_result.results.append(TestCaseResult(
+                    test_case_id="1",
+                    is_correct=False,
+                    exit_code=exit_code,
+                    stdout=stdout[-2000:],
+                    stderr=stderr[-2000:],
+                    message=msg,
+                ))
                 return eval_result
 
             hook_func = self._load_hook(assignment_dir)
@@ -109,6 +128,15 @@ class StandardJudge(JudgeEngine):
                              pass
 
                  eval_result.results.append(tc_result)
+
+            # launcher 내부 예외(per-testcase setup 실패)는 학생 코드와 무관 — system_error로 승격해
+            # main.py가 SYS verdict + Telegram 알림을 트리거하도록 한다.
+            for tc in eval_result.results:
+                if "System Error" in (tc.message or ""):
+                    eval_result.system_error = (
+                        f"Launcher Crashed: {tc.message}. Stderr tail: {(tc.stderr or '')[-300:]!r}"
+                    )
+                    break
 
             if eval_result.results:
                 correct_count = sum(1 for r in eval_result.results if r.is_correct)

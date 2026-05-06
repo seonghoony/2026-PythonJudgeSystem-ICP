@@ -388,8 +388,11 @@
                 // If it's WA or another Error with structured details
                 inputDataBox.textContent = data.failure.input || 'N/A';
                 expectedBox.textContent = data.failure.expected_output || 'N/A';
-                if(data.failure.traceback) {
+                // 우선순위: sanitize된 학생-친화 traceback → 원본 stderr 꼬리(라이브러리 트레이스백 등) → 실제 출력.
+                if (data.failure.traceback) {
                     actualBox.textContent = data.failure.traceback;
+                } else if (data.failure.raw_stderr) {
+                    actualBox.textContent = data.failure.raw_stderr;
                 } else {
                     actualBox.textContent = data.failure.actual_output || 'N/A';
                 }

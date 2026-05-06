@@ -335,7 +335,7 @@
                                 </div>
                                 <div class="error-pane">
                                     <div class="error-pane-header">Actual Output (Stdout) / Traceback</div>
-                                    <pre>{% if failure.traceback %}{{ failure.traceback }}{% else %}{{ failure.actual_output or 'N/A' }}{% endif %}</pre>
+                                    <pre>{% if failure.traceback %}{{ failure.traceback }}{% elif failure.raw_stderr %}{{ failure.raw_stderr }}{% else %}{{ failure.actual_output or 'N/A' }}{% endif %}</pre>
                                 </div>
                             </div>
                         {% endif %}
@@ -506,7 +506,7 @@
                         </div>
                         <div class="error-pane">
                             <div class="error-pane-header">Actual Output (Stdout) / Traceback</div>
-                            <pre>${fail.traceback ? fail.traceback : (fail.actual_output || 'N/A')}</pre>
+                            <pre>${fail.traceback ? fail.traceback : (fail.raw_stderr ? fail.raw_stderr : (fail.actual_output || 'N/A'))}</pre>
                         </div>
                     </div>`;
                 }

@@ -407,12 +407,16 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                                  # 첫 실패 케이스만 DB에 디테일 저장 (Admin debug용).
                                  if not failure_details_json:
                                      import json
+                                     # admin은 sanitize된 traceback과 함께 원본 stderr 꼬리도 본다 —
+                                     # 학생 프레임이 없는 라이브러리/시스템 traceback을 디버그할 때 필요.
+                                     raw_stderr_tail = (res.stderr or "")[-4000:]
                                      details = {
                                          "test_case_id": res.test_case_id,
                                          "input": getattr(res, "input_data", None),
                                          "actual_output": res.stdout,
                                          "expected_output": getattr(res, "expected_output", None),
                                          "traceback": sanitized_tb,
+                                         "raw_stderr": raw_stderr_tail,
                                          "message": res.message
                                      }
                                      failure_details_json = json.dumps(details, ensure_ascii=False)

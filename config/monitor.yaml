@@ -1,4 +1,4 @@
-refresh_interval: 5
+refresh_interval: 1
 lectures:
   - 86345 # 001분반
   - 86347 # 003분반

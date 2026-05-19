@@ -60,27 +60,35 @@ def load_monitor_config() -> Dict:
 
 
 def run_evaluate(
-    assignment_id: str, 
-    submission_path: Path, 
+    assignment_id: str,
+    submission_path: Path,
     student_id: str = "test_student",
     build: bool = False
 ):
     logger.info(f"Loading config for {assignment_id}...")
     config = load_config(assignment_id)
-    
+
+    if config.type == "token":
+        # token 과제는 학생 코드를 실행하지 않는다. eval CLI는 무의미하므로 명시적으로 차단.
+        raise ValueError(
+            f"Assignment {assignment_id} is type=token. "
+            f"'eval' CLI is not supported — verify tokens via monitor/oneshot pipeline or "
+            f"`src.utils.mole_token.verify_answer` directly."
+        )
+
+    assignment_dir = Path(f"assignments/{assignment_id}").absolute()
+
     if build:
         logger.info("Building Docker image...")
         DockerSandbox.build_image(config)
-    
-    assignment_dir = Path(f"assignments/{assignment_id}").absolute()
-    
+
     if config.type == "standard":
         engine = StandardJudge(config)
     elif config.type == "special":
         engine = SpecialJudge(config)
     else:
         raise ValueError(f"Unknown assignment type: {config.type}")
-        
+
     logger.info(f"Evaluating {submission_path.name}...")
     result = engine.evaluate(submission_path, assignment_dir, student_info={"student_id": student_id})
     return result
@@ -601,7 +609,9 @@ def _grade_token_submissions(aid: int, dry_run: bool, force: bool,
                 except Exception as e:
                     logger.error(f"  Upload Error: {e}")
                     push(f"Snowboard 업로드 오류: {student_id} - {e}")
-            elif not grade_url:
+            elif not sb:
+                logger.warning(f"  Snowboard session unavailable; DB updated but {student_id} feedback not pushed.")
+            else:
                 logger.warning(f"  No grade_url for {student_id}. Cannot upload.")
 
         except Exception as e:
@@ -852,19 +862,24 @@ def cmd_status(args):
                                     should_process = True
                                 else:
                                     continue
-                            elif args.lecture: 
+                            elif args.lecture:
+                                 if aid_int in blacklist:
+                                     continue
                                  if not week_started:
                                      continue
-                                 end_date_str = row.get('week_end')
-                                 if end_date_str:
-                                     try:
-                                         end_dt = pd.to_datetime(end_date_str).replace(hour=23, minute=59, second=59)
-                                         if end_dt + pd.Timedelta(minutes=5) > now:
-                                             should_process = True
-                                     except:
-                                         pass
-                                 else:
+                                 if aid_int in whitelist:
                                      should_process = True
+                                 else:
+                                     end_date_str = row.get('week_end')
+                                     if end_date_str:
+                                         try:
+                                             end_dt = pd.to_datetime(end_date_str).replace(hour=23, minute=59, second=59)
+                                             if end_dt + pd.Timedelta(minutes=5) > now:
+                                                 should_process = True
+                                         except:
+                                             pass
+                                     else:
+                                         should_process = True
                             else:
                                 if aid_int in blacklist:
                                     continue
@@ -983,19 +998,24 @@ def cmd_monitor(args):
                                 else:
                                     continue
                             
-                            elif args.lecture: 
+                            elif args.lecture:
+                                 if aid_int in blacklist:
+                                     continue
                                  if not week_started:
                                      continue
-                                 end_date_str = row.get('종료 일시', '-')
-                                 if end_date_str and end_date_str != '-':
-                                     try:
-                                         end_dt = pd.to_datetime(end_date_str)
-                                         if end_dt + pd.Timedelta(minutes=5) > now:
-                                             should_process = True
-                                     except:
-                                         pass
-                                 else:
+                                 if aid_int in whitelist:
                                      should_process = True
+                                 else:
+                                     end_date_str = row.get('종료 일시', '-')
+                                     if end_date_str and end_date_str != '-':
+                                         try:
+                                             end_dt = pd.to_datetime(end_date_str)
+                                             if end_dt + pd.Timedelta(minutes=5) > now:
+                                                 should_process = True
+                                         except:
+                                             pass
+                                     else:
+                                         should_process = True
                             else:
                                 if aid_int in blacklist:
                                     continue

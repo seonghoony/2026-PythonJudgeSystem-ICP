@@ -51,7 +51,19 @@ SNOWBOARD_PASSWORD=your_pw
 # Telegram Notifications
 TELEGRAM_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
+
+# Mole Challenge (Assignment 13)
+# Random 64-hex. 한 번 설정하면 절대 변경 금지 — 기존 학생의 개인/정답 토큰이 모두 바뀐다.
+# 생성 예: python -c "import secrets; print(secrets.token_hex(32))"
+MOLE_SALT=your_random_64hex
 ```
+
+> **두더지 챌린지 (Assignment 13)** 운영 노트
+> - `MOLE_SALT` 가 없으면 `src/icp_mole.py` 와 `src/utils/mole_token.py` 가 import 시점에 `KeyError` 로 즉시 실패한다.
+> - 채점 흐름은 `assignments/<id>/assignment.yaml` 에 `type: "token"` 으로 선언하며, Docker sandbox 를 우회한다.
+> - 학생은 Online text ("직접 작성") 로 정답 토큰을 제출하고, 채점기가 본문에서 64-hex 정답 토큰을 찾는다.
+> - 미제출자에게 monitor 가 한 번에 한해 개인 토큰 코멘트를 자동 안내한다 (`mole_prefills` 테이블로 idempotent).
+> - `python src/main.py prefill-tokens --lecture <id> --assignment <id>` 로 수동 prefill 도 가능.
 
 ### 3. Initialize Database
 ```bash

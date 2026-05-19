@@ -1,0 +1,14 @@
+[Unit]
+Description=ICP 2026 Mole Challenge Site (Assignment 13)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/2026-PythonJudgeSystem-ICP
+ExecStart=%h/miniforge3/envs/PythonJudgeSystem/bin/python src/icp_mole.py --port 8002
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

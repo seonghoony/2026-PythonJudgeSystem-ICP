@@ -146,6 +146,15 @@ DDL_STATEMENTS = [
         PRIMARY KEY (lecture_id, exam_type, username, room),
         FOREIGN KEY (lecture_id) REFERENCES lectures(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+
+    """
+    CREATE TABLE IF NOT EXISTS mole_prefills (
+        assignment_id BIGINT NOT NULL,
+        student_id VARCHAR(50) NOT NULL,
+        prefilled_at DATETIME NOT NULL,
+        PRIMARY KEY (assignment_id, student_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """
 ]
 

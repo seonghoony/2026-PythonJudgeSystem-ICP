@@ -267,6 +267,7 @@ class SnowBoard:
             elif '제출일' in h: headers.append('최근 제출일')
             elif '최종 수정' in h: headers.append('최종 수정')
             elif '파일' in h or 'File' in h: headers.append('첨부파일')
+            elif '온라인' in h or 'Online' in h or '직접 작성' in h: headers.append('온라인텍스트')
             else: headers.append(h)
 
         data = []
@@ -289,6 +290,8 @@ class SnowBoard:
                         if a_tag:
                             row_dict['첨부파일명'] = a_tag.text.strip()
                             row_dict['첨부파일href'] = a_tag['href']
+                    if col_name == '온라인텍스트':
+                        row_dict['온라인텍스트본문'] = td.get_text(separator=' ', strip=True)
                     if '성적' in col_name:
                          a_tag = td.find('a')
                          if a_tag:
@@ -341,6 +344,19 @@ class SnowBoard:
             except requests.Timeout:
                 continue
         raise requests.Timeout("Failed to download submission after 3 retries")
+
+    def fetch_online_text(self, grade_url: str) -> str:
+        """grade 페이지에서 학생의 온라인텍스트('직접 작성') 제출 본문을 가져온다.
+        grading 표에 온라인텍스트 컬럼이 노출되지 않는 Moodle 설정 대비 fallback."""
+        if not grade_url:
+            return ""
+        response = self.s.get(grade_url)
+        bs = BeautifulSoup(response.text, 'html.parser')
+        container = bs.find('div', {'id': 'id_submission'}) or bs.find('div', class_='submissionstatustable')
+        if not container:
+            return ""
+        body = container.find('div', class_='no-overflow')
+        return body.get_text(separator=' ', strip=True) if body else ""
 
     def download_submission(self, row: dict, dest_dir: Path) -> Path:
         """

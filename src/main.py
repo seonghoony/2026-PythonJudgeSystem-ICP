@@ -127,14 +127,23 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
     lock_urls = {}  
     for aid, item in assignments.items():
         logger.debug(f"Fetching submissions for {item.get('title')} ({aid}) [Filter: {filter_status}]...")
-        
+
         df = sb.list_submissions(aid, filter_status=filter_status)
         db.ensure_assignment(int(aid), lecture_id, item.get('title'), item.get('week_start'), item.get('week_end'))
-        
+
         if df.empty:
             logger.debug("  No submissions found.")
             db.update_assignment_fetch_time(int(aid))
             continue
+
+        # token 과제는 파일이 아닌 onlinetext 본문을 제출물로 다룬다 — 첨부파일 분기를 우회한다.
+        is_token_assignment = False
+        try:
+            is_token_assignment = (load_config(str(aid)).type == "token")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.warning(f"Failed to inspect config for {aid}: {e}")
 
         total = len(df)
         logger.debug(f"Found {total} submissions.")
@@ -174,6 +183,31 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                 continue
 
             try:
+                if is_token_assignment:
+                    online_text = row.get('온라인텍스트본문') or ""
+                    if not online_text and grade_url:
+                        try:
+                            online_text = sb.fetch_online_text(grade_url) or ""
+                        except Exception as e:
+                            logger.warning(f"  {sname} ({sid}): fetch_online_text failed: {e}")
+                    if not online_text:
+                        # 진짜 미제출 — fetch 단계에선 skip 하고 prefill 단계가 개인 토큰을 안내한다.
+                        continue
+                    content = online_text.encode('utf-8')
+                    md5 = db.record_file(content)
+                    fetched_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                    db.record_submission(
+                        assignment_id=int(aid),
+                        student_id=sid,
+                        file_md5=md5,
+                        submitted_at=ts,
+                        fetched_at=fetched_at,
+                        is_force=force,
+                        max_score=max_score_val
+                    )
+                    count += 1
+                    continue
+
                 if not href:
                     logger.info(f"  {sname} ({sid}): No attachment — recording as score 0.")
                     fetched_at = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -281,9 +315,14 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
         return
 
     assignment_dir = Path(f"assignments/{assignment_id}").absolute()
-    
+
+    if config.type == "token":
+        _grade_token_submissions(int(assignment_id), dry_run=dry_run, force=force,
+                                 url_map=url_map, lock_map=lock_map, sb=sb)
+        return
+
     DockerSandbox.build_image(config)
-    
+
     if config.type == "standard":
         engine = StandardJudge(config)
     elif config.type == "special":
@@ -495,6 +534,129 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
         GRADING_QUEUE.add(sid)
         GLOBAL_EXECUTOR.submit(process_submission, i, sub)
 
+# --- Token (Mole Challenge) Grading ---
+
+def _grade_token_submissions(aid: int, dry_run: bool, force: bool,
+                             url_map: Optional[Dict[str, str]],
+                             lock_map: Optional[Dict[str, str]],
+                             sb: Optional[SnowBoard]):
+    """온라인텍스트 제출에서 정답 토큰을 찾아 채점. 오답이면 코멘트에 본인 개인 토큰을 함께 노출."""
+    from src.utils.mole_token import verify_answer, personal_token_for
+    from bs4 import BeautifulSoup
+
+    submissions = db.get_ungraded_submissions(aid, limit=100, force=force) or []
+    if not submissions:
+        return
+
+    total = len(submissions)
+    logger.info(f"Found {total} token submissions to grade for {aid} (Force: {force}).")
+
+    for sub in submissions:
+        sid_db = sub['id']
+        student_id = sub['student_id']
+        max_score = float(sub.get('max_score', 100.0))
+        grade_url = (url_map or {}).get(student_id)
+
+        try:
+            raw = db.get_file_content(sub['file_md5']).decode('utf-8', errors='replace')
+            text = BeautifulSoup(raw, 'html.parser').get_text(separator=' ', strip=True)
+
+            attempt_count = db.get_submission_count(aid, student_id)
+
+            if verify_answer(student_id, text):
+                comment = "정답입니다!"
+                score, verdict = max_score, "AC"
+            else:
+                ptok = personal_token_for(student_id)
+                comment = (
+                    f"{attempt_count}번째 시도, 오답입니다. "
+                    f"제출하신 텍스트에서 정답 토큰을 찾지 못했습니다.\n"
+                    f"본인의 개인 토큰: {ptok}\n"
+                    f"https://www.snsec.net/icp26-week13 에서 챌린지를 통과한 뒤 "
+                    f"위 토큰을 입력하여 정답 토큰을 받으세요."
+                )
+                score, verdict = 0.0, "WA"
+
+            logger.info(f"  -> {verdict} (Score: {score:.2f}, Student: {student_id}) {'[DRY RUN]' if dry_run else ''}")
+
+            if dry_run:
+                continue
+
+            db.update_submission_result(sid_db, score, verdict, comment)
+
+            if sb and grade_url:
+                try:
+                    ok = sb.submit_score(grade_url, score, comment)
+                    if not ok:
+                        logger.error(f"  Upload Failed (Snowboard returned false) for {student_id}.")
+                        push(f"Snowboard 업로드 실패: {student_id}")
+                    elif verdict == "AC" and student_id != os.environ.get("SNOWBOARD_USER", ""):
+                        lurl = (lock_map or {}).get(student_id)
+                        if lurl:
+                            try:
+                                sb.lock_submission(lurl)
+                                logger.info("  Submission locked (max score achieved).")
+                            except Exception as e:
+                                logger.error(f"  Lock Error: {e}")
+                except Exception as e:
+                    logger.error(f"  Upload Error: {e}")
+                    push(f"Snowboard 업로드 오류: {student_id} - {e}")
+            elif not grade_url:
+                logger.warning(f"  No grade_url for {student_id}. Cannot upload.")
+
+        except Exception as e:
+            logger.error(f"Token grading failed for {sid_db}: {e}")
+            if not dry_run:
+                db.update_submission_result(sid_db, 0.0, "SYS", f"Judge Error: {e}")
+
+
+def prefill_personal_tokens(lecture_id: int, assignment_id: int, sb: SnowBoard):
+    """미제출자에게 본인 개인 토큰을 코멘트로 1회 안내한다. mole_prefills 로 idempotent."""
+    from src.utils.mole_token import personal_token_for
+
+    try:
+        df = sb.list_submissions(assignment_id, filter_status='notsubmitted')
+    except Exception as e:
+        logger.warning(f"prefill: list_submissions(notsubmitted) failed: {e}")
+        return
+    if df.empty:
+        return
+
+    n_pre = 0
+    for _, row in df.iterrows():
+        sid = str(row['학번'])
+        sname = row.get('이름', 'Unknown')
+        grade_url = row.get('성적버튼href')
+        if not grade_url:
+            continue
+        if db.has_prefill(assignment_id, sid):
+            continue
+        if db.get_submission_count(assignment_id, sid) > 0:
+            continue
+        # students 테이블도 채워주면 prefill 코멘트가 admin dashboard와 깔끔하게 연결됨.
+        db.ensure_student(sid, sname, lecture_id)
+
+        ptok = personal_token_for(sid)
+        comment = (
+            f"두더지 챌린지 안내: 본인의 개인 토큰입니다.\n"
+            f"개인 토큰: {ptok}\n"
+            f"https://www.snsec.net/icp26-week13 에서 챌린지를 통과한 뒤 "
+            f"위 토큰을 입력하여 정답 토큰을 받아 제출하세요."
+        )
+        try:
+            ok = sb.submit_score(grade_url, 0.0, comment)
+            if ok:
+                db.record_prefill(assignment_id, sid)
+                n_pre += 1
+            else:
+                logger.error(f"  Prefill upload returned false for {sid}.")
+        except Exception as e:
+            logger.error(f"  Prefill upload failed for {sid}: {e}")
+
+    if n_pre:
+        logger.info(f"Prefilled personal tokens for {n_pre} students of {assignment_id}.")
+
+
 # --- Command Handlers ---
 
 def run_loop_body(lecture_id: int, assignment_id: int, dry_run: bool, force: bool, sb: Optional[SnowBoard] = None):
@@ -507,6 +669,17 @@ def run_loop_body(lecture_id: int, assignment_id: int, dry_run: bool, force: boo
         fresh_urls, lock_urls = run_fetch(lecture_id, assignment_id, filter_status=filter_target, force=force, sb=sb)
 
         run_grade(str(assignment_id), dry_run=dry_run, force=force, url_map=fresh_urls, lock_map=lock_urls, sb=sb)
+
+        # token 과제는 미제출자에게 개인 토큰을 1회 안내한다 (mole_prefills로 idempotent).
+        if not dry_run and sb is not None:
+            try:
+                cfg = load_config(str(assignment_id))
+                if cfg.type == "token":
+                    prefill_personal_tokens(lecture_id, int(assignment_id), sb=sb)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.warning(f"prefill skipped for {assignment_id}: {e}")
     except Exception as e:
         logger.error(f"Error processing assignment {assignment_id}: {e}")
 
@@ -534,6 +707,24 @@ def cmd_evaluate(args):
     except Exception as e:
         logger.exception(e)
         sys.exit(1)
+
+def cmd_prefill_tokens(args):
+    """Standalone CLI to prefill personal tokens for a token-type assignment."""
+    try:
+        cfg = load_config(str(args.assignment))
+    except FileNotFoundError:
+        logger.error(f"Config for assignment {args.assignment} not found.")
+        sys.exit(1)
+    if cfg.type != "token":
+        logger.error(f"Assignment {args.assignment} is not type=token (got: {cfg.type}).")
+        sys.exit(1)
+    try:
+        sb = SnowBoard()
+    except Exception as e:
+        logger.error(f"Snowboard login failed: {e}")
+        sys.exit(1)
+    prefill_personal_tokens(int(args.lecture), int(args.assignment), sb=sb)
+
 
 def cmd_oneshot(args):
     from rich.status import Status
@@ -894,7 +1085,12 @@ def main():
     p_stat.add_argument("--lecture", help="Override Lecture ID")
     p_stat.add_argument("--assignment", help="Override Assignment ID")
     p_stat.set_defaults(func=cmd_status)
-    
+
+    p_pre = subparsers.add_parser("prefill-tokens", help="One-shot prefill personal tokens for a token-type assignment's non-submitters")
+    p_pre.add_argument("--lecture", required=True, help="Lecture ID")
+    p_pre.add_argument("--assignment", required=True, help="Token-type Assignment ID")
+    p_pre.set_defaults(func=cmd_prefill_tokens)
+
     args = parser.parse_args()
     args.func(args)
     GLOBAL_EXECUTOR.shutdown(wait=True)

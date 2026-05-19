@@ -243,6 +243,18 @@ def get_assignment_name(assignment_id: int) -> Optional[str]:
     rows = execute_query("SELECT name FROM assignments WHERE id = %s", (assignment_id,), fetch=True)
     return rows[0]['name'] if rows else None
 
+# --- Mole Token Prefill ---
+
+def has_prefill(assignment_id: int, student_id: str) -> bool:
+    sql = "SELECT 1 FROM mole_prefills WHERE assignment_id = %s AND student_id = %s LIMIT 1"
+    rows = execute_query(sql, (assignment_id, student_id), fetch=True)
+    return bool(rows)
+
+def record_prefill(assignment_id: int, student_id: str):
+    sql = ("INSERT IGNORE INTO mole_prefills (assignment_id, student_id, prefilled_at) "
+           "VALUES (%s, %s, NOW())")
+    execute_query(sql, (assignment_id, student_id), commit=True)
+
 def get_file_content(md5: str) -> bytes:
     """Fetch file content by MD5."""
     sql = "SELECT content FROM files WHERE md5 = %s"

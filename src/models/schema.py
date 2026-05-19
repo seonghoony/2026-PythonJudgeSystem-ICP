@@ -21,7 +21,7 @@ class GradingConfig(BaseModel):
 class AssignmentConfig(BaseModel):
     id: str
     name: str
-    type: Literal["standard", "special"]
+    type: Literal["standard", "special", "token"]
     resources: Resources = Field(default_factory=Resources)
     build: BuildOptions = Field(default_factory=BuildOptions)
     paths: Paths = Field(default_factory=Paths)

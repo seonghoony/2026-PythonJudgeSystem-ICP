@@ -174,8 +174,9 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
             if lock_url:
                 lock_urls[sid] = lock_url
 
+            # requiregrading 에서도 dedup 해야 한다 — 업로드 타임아웃 시 Snowboard 가 같은 제출을 계속 requiregrading 으로 돌려보내 중복 row 가 쌓인다.
             is_duplicate = False
-            if filter_status != 'requiregrading' and not force:
+            if not force:
                 last_ts = db.get_last_submission_time(int(aid), sid)
                 if last_ts:
                     try:
@@ -186,8 +187,17 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                     except:
                         if str(last_ts) == str(ts):
                             is_duplicate = True
-            
+
             if is_duplicate:
+                # requiregrading 으로 또 잡혔다는 건 직전 사이클 점수 업로드가 실패했다는 뜻 — 재채점 없이 업로드만 재시도.
+                if filter_status == 'requiregrading' and grade_url and sb is not None:
+                    last_sub = db.get_latest_graded_submission(int(aid), sid)
+                    if last_sub and last_sub.get('score') is not None:
+                        try:
+                            sb.submit_score(grade_url, float(last_sub['score']), last_sub.get('comment') or '')
+                            logger.info(f"  Re-uploaded prior score for {sname} ({sid}): {last_sub['score']}")
+                        except Exception as e:
+                            logger.warning(f"  Re-upload failed for {sid}: {e}")
                 continue
 
             try:
@@ -199,7 +209,7 @@ def run_fetch(lecture_id: int, assignment_id: Optional[str] = None, filter_statu
                         except Exception as e:
                             logger.warning(f"  {sname} ({sid}): fetch_online_text failed: {e}")
                     if not online_text:
-                        # 진짜 미제출 — fetch 단계에선 skip 하고 prefill 단계가 개인 토큰을 안내한다.
+                        # 미제출 — 채점할 본문이 없으니 skip.
                         continue
                     content = online_text.encode('utf-8')
                     md5 = db.record_file(content)
@@ -620,53 +630,6 @@ def _grade_token_submissions(aid: int, dry_run: bool, force: bool,
                 db.update_submission_result(sid_db, 0.0, "SYS", f"Judge Error: {e}")
 
 
-def prefill_personal_tokens(lecture_id: int, assignment_id: int, sb: SnowBoard):
-    """미제출자에게 본인 개인 토큰을 코멘트로 1회 안내한다. mole_prefills 로 idempotent."""
-    from src.utils.mole_token import personal_token_for
-
-    try:
-        df = sb.list_submissions(assignment_id, filter_status='notsubmitted')
-    except Exception as e:
-        logger.warning(f"prefill: list_submissions(notsubmitted) failed: {e}")
-        return
-    if df.empty:
-        return
-
-    n_pre = 0
-    for _, row in df.iterrows():
-        sid = str(row['학번'])
-        sname = row.get('이름', 'Unknown')
-        grade_url = row.get('성적버튼href')
-        if not grade_url:
-            continue
-        if db.has_prefill(assignment_id, sid):
-            continue
-        if db.get_submission_count(assignment_id, sid) > 0:
-            continue
-        # students 테이블도 채워주면 prefill 코멘트가 admin dashboard와 깔끔하게 연결됨.
-        db.ensure_student(sid, sname, lecture_id)
-
-        ptok = personal_token_for(sid)
-        comment = (
-            f"두더지 챌린지 안내: 본인의 개인 토큰입니다.\n"
-            f"개인 토큰: {ptok}\n"
-            f"https://www.snsec.net/icp26-week13 에서 챌린지를 통과한 뒤 "
-            f"위 토큰을 입력하여 정답 토큰을 받아 제출하세요."
-        )
-        try:
-            ok = sb.submit_score(grade_url, 0.0, comment)
-            if ok:
-                db.record_prefill(assignment_id, sid)
-                n_pre += 1
-            else:
-                logger.error(f"  Prefill upload returned false for {sid}.")
-        except Exception as e:
-            logger.error(f"  Prefill upload failed for {sid}: {e}")
-
-    if n_pre:
-        logger.info(f"Prefilled personal tokens for {n_pre} students of {assignment_id}.")
-
-
 # --- Command Handlers ---
 
 def run_loop_body(lecture_id: int, assignment_id: int, dry_run: bool, force: bool, sb: Optional[SnowBoard] = None):
@@ -679,17 +642,6 @@ def run_loop_body(lecture_id: int, assignment_id: int, dry_run: bool, force: boo
         fresh_urls, lock_urls = run_fetch(lecture_id, assignment_id, filter_status=filter_target, force=force, sb=sb)
 
         run_grade(str(assignment_id), dry_run=dry_run, force=force, url_map=fresh_urls, lock_map=lock_urls, sb=sb)
-
-        # token 과제는 미제출자에게 개인 토큰을 1회 안내한다 (mole_prefills로 idempotent).
-        if not dry_run and sb is not None:
-            try:
-                cfg = load_config(str(assignment_id))
-                if cfg.type == "token":
-                    prefill_personal_tokens(lecture_id, int(assignment_id), sb=sb)
-            except FileNotFoundError:
-                pass
-            except Exception as e:
-                logger.warning(f"prefill skipped for {assignment_id}: {e}")
     except Exception as e:
         logger.error(f"Error processing assignment {assignment_id}: {e}")
 
@@ -717,24 +669,6 @@ def cmd_evaluate(args):
     except Exception as e:
         logger.exception(e)
         sys.exit(1)
-
-def cmd_prefill_tokens(args):
-    """Standalone CLI to prefill personal tokens for a token-type assignment."""
-    try:
-        cfg = load_config(str(args.assignment))
-    except FileNotFoundError:
-        logger.error(f"Config for assignment {args.assignment} not found.")
-        sys.exit(1)
-    if cfg.type != "token":
-        logger.error(f"Assignment {args.assignment} is not type=token (got: {cfg.type}).")
-        sys.exit(1)
-    try:
-        sb = SnowBoard()
-    except Exception as e:
-        logger.error(f"Snowboard login failed: {e}")
-        sys.exit(1)
-    prefill_personal_tokens(int(args.lecture), int(args.assignment), sb=sb)
-
 
 def cmd_oneshot(args):
     from rich.status import Status
@@ -1105,11 +1039,6 @@ def main():
     p_stat.add_argument("--lecture", help="Override Lecture ID")
     p_stat.add_argument("--assignment", help="Override Assignment ID")
     p_stat.set_defaults(func=cmd_status)
-
-    p_pre = subparsers.add_parser("prefill-tokens", help="One-shot prefill personal tokens for a token-type assignment's non-submitters")
-    p_pre.add_argument("--lecture", required=True, help="Lecture ID")
-    p_pre.add_argument("--assignment", required=True, help="Token-type Assignment ID")
-    p_pre.set_defaults(func=cmd_prefill_tokens)
 
     args = parser.parse_args()
     args.func(args)

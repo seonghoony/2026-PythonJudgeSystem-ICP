@@ -170,12 +170,24 @@ def get_submission_count(assignment_id: int, student_id: str) -> int:
 def get_last_submission_time(assignment_id: int, student_id: str) -> Optional[str]:
     """Get the submitted_at timestamp of the latest submission."""
     sql = """
-    SELECT submitted_at FROM submissions 
+    SELECT submitted_at FROM submissions
     WHERE assignment_id = %s AND student_id = %s
     ORDER BY submitted_at DESC LIMIT 1
     """
     rows = execute_query(sql, (assignment_id, student_id), fetch=True)
     return rows[0]['submitted_at'] if rows else None
+
+def get_latest_graded_submission(assignment_id: int, student_id: str) -> Optional[dict]:
+    """Latest submission with grading state — used to retry a failed Snowboard upload
+    instead of inserting a duplicate row on the next monitor cycle."""
+    sql = """
+    SELECT id, submitted_at, score, verdict, comment, max_score
+    FROM submissions
+    WHERE assignment_id = %s AND student_id = %s
+    ORDER BY submitted_at DESC, id DESC LIMIT 1
+    """
+    rows = execute_query(sql, (assignment_id, student_id), fetch=True)
+    return rows[0] if rows else None
 
 def get_code_similarity(md5_a: str, md5_b: str) -> Tuple[float, float]:
     if md5_a > md5_b:

@@ -460,65 +460,77 @@ class SnowBoard:
         logger.info(f"Saved instruction to {save_path}")
         return save_path
 
-    def submit_score(self, grade_url: str, score: float, comment: str) -> bool:
-        """
-        Submits score using the 'grade_url' (extracted as '성적버튼href').
-        """
+    def submit_score(self, grade_url: str, score: float, comment: str, max_retries: int = 3) -> bool:
+        """Submits score via '성적버튼href'. 일시적 타임아웃은 지수 백오프로 재시도 — 1회 실패가 다음 사이클 중복 row 의 원인이 된다."""
         if not grade_url:
             return False
-            
-        response = self.s.get(grade_url)
-        bs = BeautifulSoup(response.text, 'html.parser')
 
-        inputs = bs.find('form', {'class': 'gradeform mform'}).find_all('input')
+        last_exc: Optional[Exception] = None
+        for attempt in range(max_retries):
+            try:
+                response = self.s.get(grade_url)
+                bs = BeautifulSoup(response.text, 'html.parser')
 
-        data = {i['name']: i['value'] for i in inputs if 'name' in i.attrs}
+                inputs = bs.find('form', {'class': 'gradeform mform'}).find_all('input')
 
-        # 충돌 가능한 submit 버튼들은 제거 — 기본 save 버튼만 남겨야 응답이 깔끔하다.
-        buttons_to_remove = [
-            'saveandshownext', 'cancelbutton', 'nosaveandnext', 'nosaveandprevious'
-        ]
-        for btn in buttons_to_remove:
-            if btn in data:
-                del data[btn]
+                data = {i['name']: i['value'] for i in inputs if 'name' in i.attrs}
 
-        data['grade'] = f'{score:.02f}'
-        data['assignfeedbackcomments_editor[text]'] = comment.replace('\n', '<br>')
+                # 충돌 가능한 submit 버튼들은 제거 — 기본 save 버튼만 남겨야 응답이 깔끔하다.
+                buttons_to_remove = [
+                    'saveandshownext', 'cancelbutton', 'nosaveandnext', 'nosaveandprevious'
+                ]
+                for btn in buttons_to_remove:
+                    if btn in data:
+                        del data[btn]
 
-        form_action = bs.find('form', {'class': 'gradeform mform'}).get('action')
-        if form_action:
-            action = urljoin(grade_url, form_action)
-        else:
-            action = grade_url
+                data['grade'] = f'{score:.02f}'
+                data['assignfeedbackcomments_editor[text]'] = comment.replace('\n', '<br>')
 
-        headers = {'Referer': grade_url}
-        response = self.s.post(action, data=data, headers=headers)
+                form_action = bs.find('form', {'class': 'gradeform mform'}).get('action')
+                if form_action:
+                    action = urljoin(grade_url, form_action)
+                else:
+                    action = grade_url
 
-        if '성적 변경 사항이 저장되었습니다' in response.text:
-            return True
+                headers = {'Referer': grade_url}
+                response = self.s.post(action, data=data, headers=headers)
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+                if '성적 변경 사항이 저장되었습니다' in response.text:
+                    return True
 
-        alert_div = soup.find('div', class_='alert-success')
-        success_msg = "성적 변경 사항이 저장되었습니다"
+                soup = BeautifulSoup(response.text, 'html.parser')
 
-        if alert_div and success_msg in alert_div.get_text():
-             logger.info("  Found success message in alert-success.")
-             return True
+                alert_div = soup.find('div', class_='alert-success')
+                success_msg = "성적 변경 사항이 저장되었습니다"
 
-        error_div = soup.find('div', class_='alert-danger')
-        if error_div:
-            logger.error(f"  Snowboard Error: {error_div.get_text(strip=True)}")
-            return False
-            
-        error_msg = soup.find(class_='error')
-        if error_msg:
-            logger.error(f"  Snowboard Error Class: {error_msg.get_text(strip=True)}")
-            return False
+                if alert_div and success_msg in alert_div.get_text():
+                    logger.info("  Found success message in alert-success.")
+                    return True
 
-        # 성공/실패 알림이 모두 없으면 "변경 없음"으로 간주 (Snowboard의 동일 점수 재제출 동작).
-        logger.info("  Success message not found, but no errors detected. Assuming 'No Change' success.")
-        return True
+                error_div = soup.find('div', class_='alert-danger')
+                if error_div:
+                    logger.error(f"  Snowboard Error: {error_div.get_text(strip=True)}")
+                    return False
+
+                error_msg = soup.find(class_='error')
+                if error_msg:
+                    logger.error(f"  Snowboard Error Class: {error_msg.get_text(strip=True)}")
+                    return False
+
+                # 성공/실패 알림이 모두 없으면 "변경 없음"으로 간주 (Snowboard의 동일 점수 재제출 동작).
+                logger.info("  Success message not found, but no errors detected. Assuming 'No Change' success.")
+                return True
+
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                last_exc = e
+                if attempt < max_retries - 1:
+                    backoff = 5 * (2 ** attempt)
+                    logger.warning(f"  Upload transient error (attempt {attempt+1}/{max_retries}): {e}. Retrying in {backoff}s...")
+                    time.sleep(backoff)
+                    continue
+
+        assert last_exc is not None
+        raise last_exc
 
     def lock_submission(self, lock_url: str):
         """

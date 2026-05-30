@@ -1,4 +1,4 @@
-refresh_interval: 1
+refresh_interval: 0   # sleep 없이 최대 속도로 채점 (매 사이클 config 재로딩 → 즉시 반영)
 lectures:
   - 86345 # 001분반
   - 86347 # 003분반

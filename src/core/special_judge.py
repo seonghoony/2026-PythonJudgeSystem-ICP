@@ -8,6 +8,59 @@ from src.core.engine import JudgeEngine
 from src.core.sandbox import DockerSandbox
 from src.models.schema import EvaluationResult, TestCaseResult
 
+
+def _looks_like_results(value) -> bool:
+    """결과 배열처럼 생겼는지: 비어있지 않고 첫 원소가 채점 결과 dict인지."""
+    if not isinstance(value, list) or not value:
+        return False
+    head = value[0]
+    return isinstance(head, dict) and (
+        "is_correct" in head or "test_case_id" in head or "message" in head
+    )
+
+
+def _extract_result_array(text: str):
+    """
+    그래더 stdout(마커 사이 문자열)에서 결과 JSON 배열을 복구한다.
+
+    계약상 그래더는 `print(json.dumps(results))`로 '결과 dict들의 리스트'만 출력해야 하지만,
+    학생이 __init__/__str__/메서드 안에서 stdout으로 print하면 JSON 앞뒤로 잡음이 섞여
+    통짜 json.loads가 깨진다(학생 실수지만 그래더가 낸 결과 자체는 멀쩡하다).
+    모든 '[' 위치에서 raw_decode를 시도해 '결과처럼 생긴' 마지막 리스트를 복구한다.
+    복구 불가 시 None.
+    """
+    if not text or not text.strip():
+        return None
+
+    # 1) 정상 경로: 마커 사이가 통째로 결과 리스트.
+    try:
+        value = json.loads(text)
+        if isinstance(value, list):
+            return value
+    except ValueError:
+        pass
+
+    # 2) 오염된 경로: '[' 마다 raw_decode. '결과처럼 생긴' 마지막 리스트를 우선 채택하고,
+    #    없으면 마지막으로 디코드된 리스트를 쓴다. 그래더의 최종 출력이 가장 뒤에 있으므로 '마지막'.
+    decoder = json.JSONDecoder()
+    last_list = None
+    last_resultish = None
+    i = text.find('[')
+    while i != -1:
+        try:
+            value, end = decoder.raw_decode(text, i)
+        except ValueError:
+            i = text.find('[', i + 1)
+            continue
+        if isinstance(value, list):
+            last_list = value
+            if _looks_like_results(value):
+                last_resultish = value
+        i = text.find('[', max(end, i + 1))
+
+    return last_resultish if last_resultish is not None else last_list
+
+
 class SpecialJudge(JudgeEngine):
     def evaluate(self, submission_path: Path, assignment_dir: Path, student_info: dict = None) -> EvaluationResult:
         eval_result = EvaluationResult(
@@ -47,12 +100,24 @@ class SpecialJudge(JudgeEngine):
             start_marker = "___JUDGE_RESULT_START___"
             end_marker = "___JUDGE_RESULT_END___"
 
-            if start_marker in stdout and end_marker in stdout:
-                try:
-                    json_str = stdout.split(start_marker)[1].split(end_marker)[0]
-                    results_data = json.loads(json_str)
-                except json.JSONDecodeError:
-                    eval_result.system_error = "Failed to parse special judge results."
+            # 첫 START와 '마지막' END 사이를 취한다. 학생/그래더가 마커 문자열을 직접
+            # 출력해 잡음에 섞여도 launcher가 감싼 진짜 구간을 안정적으로 끊어낸다.
+            si = stdout.find(start_marker)
+            ei = stdout.rfind(end_marker)
+
+            if si != -1 and ei != -1 and ei > si:
+                json_str = stdout[si + len(start_marker):ei]
+
+                # 마커 사이에는 결과 JSON 배열만 있어야 하지만, 학생이 메서드/__str__ 안에서
+                # stdout으로 print하면 잡음이 섞여 통짜 파싱이 깨진다(학생 실수). 이 경우에도
+                # 그래더가 마지막에 낸 결과 배열을 복구해 정상 채점하고, 출제자에게 오탐 알림을
+                # 보내지 않는다. 정말로 복구할 결과가 없을 때만 system_error로 승격한다.
+                results_data = _extract_result_array(json_str)
+                if results_data is None:
+                    eval_result.system_error = (
+                        "Failed to parse special judge results. "
+                        f"Output tail: {json_str[-300:]!r}"
+                    )
                     return eval_result
 
                 for res in results_data:

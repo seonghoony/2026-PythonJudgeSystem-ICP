@@ -10,6 +10,16 @@ from src.core.engine import JudgeEngine
 from src.core.sandbox import DockerSandbox
 from src.models.schema import EvaluationResult, TestCaseResult
 
+
+def _trailing_lenient_equal(actual: str, expected: str) -> bool:
+    """줄 끝 공백과 출력 끝부분의 빈 줄에만 관대한 비교.
+    각 줄의 오른쪽 공백(CR 포함)을 제거하고 끝의 빈 줄을 무시했을 때 같으면 True.
+    내용·내부 공백·왼쪽 공백·중간 빈 줄은 그대로 엄격하게 비교한다(오답을 통과시키지 않음)."""
+    def _norm(t: str) -> str:
+        return "\n".join(line.rstrip() for line in t.split("\n")).rstrip("\n")
+    return _norm(actual) == _norm(expected)
+
+
 class StandardJudge(JudgeEngine):
     def evaluate(self, submission_path: Path, assignment_dir: Path, student_info: dict = None) -> EvaluationResult:
         eval_result = EvaluationResult(
@@ -114,6 +124,11 @@ class StandardJudge(JudgeEngine):
                          try:
                              expected = output_file.read_text()
                              tc_result.expected_output = expected
+
+                             # 줄 끝 공백/끝부분 빈 줄 차이로만 틀린 경우 정답으로 구제(내용은 엄격).
+                             if tc_result.exit_code == 0 and _trailing_lenient_equal(tc_result.stdout, expected):
+                                 tc_result.is_correct = True
+                                 tc_result.message = ""
 
                              if custom_validator and tc_result.exit_code == 0:
                                  try:

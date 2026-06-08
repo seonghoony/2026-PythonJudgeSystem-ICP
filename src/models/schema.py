@@ -36,6 +36,7 @@ class TestCase(BaseModel):
 class TestCaseResult(BaseModel):
     test_case_id: str
     is_correct: bool
+    weight: float = 1.0   # 부분점수 가중치. 미지정 시 1.0 → (통과 수/전체 수)와 동일.
     stdout: str = ""
     stderr: str = ""
     exit_code: int = 0

@@ -89,6 +89,14 @@ class StandardJudge(JudgeEngine):
             for res_data in results_json:
                  tc_result = TestCaseResult(**res_data)
 
+                 # 선택적 testcase 가중치: testcases/<id>/weight 파일이 있으면 사용(기본 1.0).
+                 weight_file = assignment_dir / "testcases" / tc_result.test_case_id / "weight"
+                 if weight_file.exists():
+                     try:
+                         tc_result.weight = float(weight_file.read_text().strip())
+                     except (ValueError, OSError):
+                         pass
+
                  if hook_func:
                      try:
                          # hook_func은 tc_result를 in-place로 수정한다.
@@ -144,7 +152,11 @@ class StandardJudge(JudgeEngine):
 
                 policy = self.config.grading.policy
                 if policy == "partial":
-                    eval_result.total_score = correct_count / total_count
+                    # 가중치 부분점수: 통과 testcase weight 합 / 전체 weight 합.
+                    # weight 기본 1.0 → 기존 (통과 수/전체 수)와 동일(하위호환).
+                    total_w = sum(r.weight for r in eval_result.results)
+                    correct_w = sum(r.weight for r in eval_result.results if r.is_correct)
+                    eval_result.total_score = (correct_w / total_w) if total_w > 0 else 0.0
                 else:
                     eval_result.total_score = 1.0 if correct_count == total_count else 0.0
             else:

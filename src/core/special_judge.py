@@ -121,9 +121,14 @@ class SpecialJudge(JudgeEngine):
                     return eval_result
 
                 for res in results_data:
+                    try:
+                        weight = float(res.get("weight", 1.0))
+                    except (TypeError, ValueError):
+                        weight = 1.0
                     tc = TestCaseResult(
                         test_case_id=res.get("test_case_id", "1"),
                         is_correct=res.get("is_correct", False),
+                        weight=weight,
                         stdout=res.get("stdout", ""),
                         stderr=res.get("stderr", ""),
                         exit_code=res.get("exit_code", 0),
@@ -137,7 +142,11 @@ class SpecialJudge(JudgeEngine):
 
                     policy = self.config.grading.policy
                     if policy == "partial":
-                        eval_result.total_score = correct_count / total_count
+                        # 가중치 부분점수: 통과 항목 weight 합 / 전체 weight 합.
+                        # weight 기본 1.0 → 기존 (통과 수/전체 수)와 동일(하위호환).
+                        total_w = sum(r.weight for r in eval_result.results)
+                        correct_w = sum(r.weight for r in eval_result.results if r.is_correct)
+                        eval_result.total_score = (correct_w / total_w) if total_w > 0 else 0.0
                     else:
                         eval_result.total_score = 1.0 if correct_count == total_count else 0.0
                 else:

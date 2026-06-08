@@ -454,7 +454,15 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                         comment = "정답입니다!"
                     else:
                         comment = f"{attempt_count}번째 시도, 오답입니다."
-    
+
+                        # 채점 기준(꼭지)별 통과 여부를 (O)/(X)로 나열한다.
+                        # 학생에게 보이는 실시간 평점이 어느 기준에서 깎였는지 투명하게 드러나도록 한다.
+                        for _res in result.results:
+                            _mark = "(O)" if _res.is_correct else "(X)"
+                            _tcid = str(_res.test_case_id)
+                            _label = f"테스트 {_tcid}" if _tcid.isdigit() else _tcid
+                            comment += f"\n{_mark} {_label}"
+
                         from src.utils.sanitizer import sanitize_traceback
                         for res in result.results:
                              if not res.is_correct:

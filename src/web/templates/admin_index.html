@@ -117,7 +117,7 @@
                 </a>
                 {% for lec in exam_lectures %}
                 <a class="tile primary" href="/admin/exam/{{ lec.id }}">
-                    <div class="title">중간고사 대시보드 — {{ lec.name }}</div>
+                    <div class="title">{{ lec.title }} 대시보드 — {{ lec.name }}</div>
                     <div class="sub">3문항 실시간 현황·CDF·최근 5건 <code>/admin/exam/{{ lec.id }}</code></div>
                 </a>
                 {% endfor %}

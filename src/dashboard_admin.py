@@ -164,7 +164,12 @@ async def admin_index(request: Request, username: str = Depends(log_dashboard_ac
 
     # 시험 문항이 실제로 선언된 분반만 시험 대시보드 링크로 노출.
     exam_lectures = [
-        l for l in lectures
+        {
+            "id": l["id"],
+            "name": l["name"],
+            "title": (exam_conf.get(l["id"]) or {}).get("title") or "시험",
+        }
+        for l in lectures
         if (exam_conf.get(l['id']) or {}).get("problems")
     ]
 
@@ -448,6 +453,8 @@ def _load_exam_config(lecture_id: int):
     window_start = exam.get("window_start")
     window_end = exam.get("window_end")
     class_size = exam.get("class_size")
+    exam_type = exam.get("exam_type") or "midterm"
+    title = exam.get("title") or "중간고사"
 
     problem_meta = []
     for idx, aid in enumerate(problem_ids):
@@ -470,6 +477,8 @@ def _load_exam_config(lecture_id: int):
         "window_start": str(window_start) if window_start else None,
         "window_end": str(window_end) if window_end else None,
         "class_size": int(class_size) if class_size else None,
+        "exam_type": exam_type,
+        "title": title,
         "problems": problem_meta,
     }
 
@@ -484,12 +493,13 @@ async def admin_exam_view(request: Request, lecture_id: int, _: str = Depends(ve
     cfg = _load_exam_config(lecture_id)
     # 초기 셸 렌더링 용도: 시험장 섹션 틀을 서버가 먼저 심어두고,
     # 실시간 숫자 3개(응시/출석/퇴실)는 JS 폴링으로 갱신.
-    room_stats = db.get_exam_room_attendance_stats(lecture_id, "midterm")
+    room_stats = db.get_exam_room_attendance_stats(lecture_id, cfg["exam_type"])
 
     return templates.TemplateResponse(
         request=request, name="admin_exam.html", context={
             "lecture_id": lecture_id,
             "lecture_name": lecture_name,
+            "exam_title": cfg["title"],
             "window_start": cfg["window_start"],
             "window_end": cfg["window_end"],
             "class_size": cfg["class_size"],
@@ -543,7 +553,7 @@ async def api_exam_data(lecture_id: int, _: str = Depends(verify_lecture_access)
         "window_start": cfg["window_start"],
         "window_end": cfg["window_end"],
         "problems": problems_out,
-        "rooms": db.get_exam_room_attendance_stats(lecture_id, "midterm"),
+        "rooms": db.get_exam_room_attendance_stats(lecture_id, cfg["exam_type"]),
     }
 
 @app.get("/admin/photo/{student_id}")

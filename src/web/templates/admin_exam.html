@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>중간고사 실시간 현황 — {{ lecture_name }}</title>
+    <title>{{ exam_title | default('중간고사') }} 실시간 현황 — {{ lecture_name }}</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         :root {
@@ -296,7 +296,7 @@
     <nav>
         <h1>
             <img src="/static/smu_logo_white.svg" alt="SMWU" style="height: 2.2rem; width: auto; flex-shrink: 0;">
-            <span class="live-indicator"></span> 중간고사 실시간 현황 — {{ lecture_name }}
+            <span class="live-indicator"></span> {{ exam_title | default('중간고사') }} 실시간 현황 — {{ lecture_name }}
         </h1>
         <div style="display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap;">
             <a href="/" title="홈으로" style="color: var(--text-primary); text-decoration: none; font-size: 1rem; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface-color); transition: background 0.2s;">🏠 홈</a>

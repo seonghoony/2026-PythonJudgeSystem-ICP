@@ -27,6 +27,14 @@ blacklist:
   # - 2020398 # 1분반 기말고사—실기 1
   # - 2020399 # 1분반 기말고사—실기 2
   # - 2020400 # 1분반 기말고사—실기 3
+  # >>> TEMP-3BUNBAN-PAUSE (auto-remove at 2026-06-09 21:05) >>>
+  # 1분반 기말(18:40~21:05) 라이브 채점에 자원 집중 — 3분반 14주차 활성 과제 채점만 일시중지.
+  # systemd --user timer 'resume-3bunban-grading' 가 21:05 에 이 블록을 제거 → 자동 채점 재개.
+  # (14주차 마감은 23:59 패턴이므로 21:05 재개 시 일시중지 동안의 제출분도 모두 재채점됨)
+  - 2016699 # 3분반 Assignment 14-1—재고 관리
+  - 2016759 # 3분반 Assignment 14-2—D-day 카운터
+  - 2016760 # 3분반 Assignment 14-3—온도 변환기
+  # <<< TEMP-3BUNBAN-PAUSE <<<
 
 # 실시간 시험 대시보드 — /admin/exam/{lecture_id}
 # 각 분반별로 시험 구간(window_start/end), 3개 문항 ID, 시험 종류(exam_type)를 선언한다.

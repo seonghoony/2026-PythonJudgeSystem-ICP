@@ -574,15 +574,38 @@ class AttendanceRequest(BaseModel):
 async def admin_attendance_view(request: Request, username: str = Depends(log_dashboard_access)):
     sql_lectures = "SELECT id, name FROM lectures ORDER BY id ASC"
     lectures = db.execute_query(sql_lectures, fetch=True) or []
-    
+
     admin_username = os.environ.get("SNOWBOARD_USER", "")
     if username != admin_username:
         allowed_lecture_ids = db.get_ta_accessible_lectures(username)
         lectures = [l for l in lectures if l['id'] in allowed_lecture_ids]
-        
+
+    # 기본 선택값: 접근 가능한 분반 중 '가장 최근에 시작하는 시험'(monitor.yaml exam.window_start
+    # 기준)을 기본 과목·시험종류로. 새 시험을 config 에 올리면 출석부 기본값이 자동으로 전환된다.
+    default_lecture_id = lectures[0]["id"] if lectures else None
+    default_exam_type = "midterm"
+    monitor_config_path = Path("config/monitor.yaml")
+    if monitor_config_path.exists():
+        try:
+            with open(monitor_config_path) as f:
+                exam_conf = (yaml.safe_load(f) or {}).get("exam") or {}
+        except Exception:
+            exam_conf = {}
+        accessible_ids = {l["id"] for l in lectures}
+        candidates = [
+            (str(c.get("window_start") or ""), lid, (c.get("exam_type") or "midterm"))
+            for lid, c in exam_conf.items()
+            if lid in accessible_ids
+        ]
+        if candidates:
+            candidates.sort(reverse=True)  # 가장 최근 window_start 우선
+            _, default_lecture_id, default_exam_type = candidates[0]
+
     return templates.TemplateResponse(
         request=request, name="admin_attendance.html", context={
-            "lectures": lectures
+            "lectures": lectures,
+            "default_lecture_id": default_lecture_id,
+            "default_exam_type": default_exam_type,
         }
     )
 

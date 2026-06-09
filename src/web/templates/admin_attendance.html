@@ -413,15 +413,15 @@
                     <label for="lectureSelect">과목 (Lecture)</label>
                     <select id="lectureSelect">
                         {% for lec in lectures %}
-                            <option value="{{ lec.id }}"{% if lec.id == 86347 %} selected{% endif %}>{{ lec.name }}</option>
+                            <option value="{{ lec.id }}"{% if lec.id == default_lecture_id %} selected{% endif %}>{{ lec.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="form-group">
                     <label for="examTypeSelect">시험 종류 (Exam)</label>
                     <select id="examTypeSelect">
-                        <option value="midterm">중간고사 (Midterm)</option>
-                        <option value="final">기말고사 (Final)</option>
+                        <option value="midterm"{% if default_exam_type == 'midterm' %} selected{% endif %}>중간고사 (Midterm)</option>
+                        <option value="final"{% if default_exam_type == 'final' %} selected{% endif %}>기말고사 (Final)</option>
                     </select>
                 </div>
             </div>
@@ -497,6 +497,20 @@
         let currentCanMark = false;
         let searchTimeout = null;
         let activeIndex = -1;
+
+        // 서버가 내려준 기본값(config 기반: 접근 가능한 분반 중 가장 최근 시험).
+        // 운영 중인 시험이 바뀌면 토큰이 달라지므로, 이전 시험의 저장된 선택을 버리고
+        // 모든 기기를 새 기본값으로 '한 번' 스냅시킨다.
+        const SERVER_DEFAULT_LECTURE = "{{ default_lecture_id or '' }}";
+        const SERVER_DEFAULT_EXAM = "{{ default_exam_type or 'midterm' }}";
+        if (SERVER_DEFAULT_LECTURE) {
+            const DEFAULT_TOKEN = SERVER_DEFAULT_LECTURE + ":" + SERVER_DEFAULT_EXAM;
+            if (localStorage.getItem('att_default_token') !== DEFAULT_TOKEN) {
+                localStorage.setItem('att_default_token', DEFAULT_TOKEN);
+                localStorage.setItem('att_lecture_id', SERVER_DEFAULT_LECTURE);
+                localStorage.setItem('att_exam_type', SERVER_DEFAULT_EXAM);
+            }
+        }
 
         // Load saved state
         if (localStorage.getItem('att_lecture_id')) lectureSelect.value = localStorage.getItem('att_lecture_id');

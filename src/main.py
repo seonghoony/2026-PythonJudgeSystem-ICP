@@ -496,12 +496,9 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
                                      if clean_trace:
                                          if "EOFError: EOF when reading a line" in clean_trace:
                                              comment += "\n\nEOFError는 입력(input)이 더 이상 없을 때 발생합니다.\n불필요한 input() 호출이 과도하게 많거나, 반복문 종료 조건이 잘못되어 입력을 계속 기다리고 있지 않은지 확인해주세요!"
-
-                                         if "invalid literal for int() with base 10" in clean_trace:
-                                             comment += "\n\nValueError(invalid literal for int())는 int()가 숫자로 바꿀 수 없는 문자열을 받았다는 뜻입니다. 따옴표 안의 값이 정말 정수 형태인지 확인하세요. 그 문자열을 코드에서 직접 만들어 넘긴 경우, 에러가 표시된 줄(int 호출)이 아니라 '그 문자열을 만든 부분'에 원인이 있습니다. 특히 값이 음수가 되는 경우 자릿수 맞추기 등에서 의도치 않은 문자열이 만들어지지 않는지 점검해보세요."
-
+                                             
                                          comment += f"\nError Logs:\n<pre>\n{clean_trace}\n</pre>\n"
-                                         break
+                                         break 
     
                     if result.system_error:
                         from src.utils.sanitizer import sanitize_system_error

@@ -2,6 +2,7 @@ import json
 import tempfile
 import shutil
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -96,6 +97,15 @@ class StandardJudge(JudgeEngine):
             hook_func = self._load_hook(assignment_dir)
             custom_validator = self._load_validator(assignment_dir)
 
+            # hook의 post_process가 3개 이상 인자를 받으면 제출 소스 경로까지 전달한다.
+            # (소스 검사형 채점 항목용 — 예: 형식 문자열/try-except 존재 여부)
+            hook_wants_submission = False
+            if hook_func:
+                try:
+                    hook_wants_submission = len(inspect.signature(hook_func).parameters) >= 3
+                except (TypeError, ValueError):
+                    hook_wants_submission = False
+
             for res_data in results_json:
                  tc_result = TestCaseResult(**res_data)
 
@@ -107,10 +117,24 @@ class StandardJudge(JudgeEngine):
                      except (ValueError, OSError):
                          pass
 
+                 # 선택적 testcase 표시명: testcases/<id>/label 파일이 있으면 학생 코멘트
+                 # (O)/(X) 라인에 "테스트 <id>" 대신 이 이름을 쓴다(채점 기준 항목 노출용).
+                 label_file = assignment_dir / "testcases" / tc_result.test_case_id / "label"
+                 if label_file.exists():
+                     try:
+                         label_text = label_file.read_text().strip()
+                         if label_text:
+                             tc_result.label = label_text
+                     except OSError:
+                         pass
+
                  if hook_func:
                      try:
                          # hook_func은 tc_result를 in-place로 수정한다.
-                         hook_func(tc_result, assignment_dir)
+                         if hook_wants_submission:
+                             hook_func(tc_result, assignment_dir, submission_path)
+                         else:
+                             hook_func(tc_result, assignment_dir)
                      except Exception as e:
                          tc_result.system_error = f"Hook Error: {e}"
 

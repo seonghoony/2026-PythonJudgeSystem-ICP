@@ -360,25 +360,32 @@ def get_cdf_data(assignment_id: int) -> list[dict]:
 
 # --- Midterm Exam Live Dashboard ---
 
-def get_exam_problem_stats(assignment_id: int) -> dict:
+def get_exam_problem_stats(assignment_id: int, ac_threshold: Optional[float] = None) -> dict:
     """
     단일 문항에 대한 실시간 통계. uniq_students는 `is_latest=1` 기준,
     ac_count도 `is_latest=1 AND verdict='AC'` 기준이라 재제출로 AC를 깨면
     정답자 수가 감소할 수 있다.
+    ac_threshold가 주어지면 verdict와 무관하게 score가 그 점수 이상이어도
+    정답으로 집계한다(추가점수 문항의 '기본 만점 = 정답' 표시용 — 표시 계층 전용).
     last_fetched_at 은 assignments 테이블의 값(크롤러의 가장 최근 fetch 시점).
     """
-    sql = """
+    ac_cond = "s.verdict = 'AC'"
+    params: tuple = (assignment_id,)
+    if ac_threshold is not None:
+        ac_cond = "(s.verdict = 'AC' OR s.score >= %s)"
+        params = (float(ac_threshold), assignment_id)
+    sql = f"""
     SELECT
         COUNT(DISTINCT CASE WHEN s.is_latest = 1 THEN s.student_id END) AS submitters,
         COUNT(s.id) AS total_submissions,
-        SUM(CASE WHEN s.is_latest = 1 AND s.verdict = 'AC' THEN 1 ELSE 0 END) AS ac_count,
+        SUM(CASE WHEN s.is_latest = 1 AND {ac_cond} THEN 1 ELSE 0 END) AS ac_count,
         a.last_fetched_at AS last_fetched_at
     FROM assignments a
     LEFT JOIN submissions s ON s.assignment_id = a.id
     WHERE a.id = %s
     GROUP BY a.id
     """
-    rows = execute_query(sql, (assignment_id,), fetch=True)
+    rows = execute_query(sql, params, fetch=True)
     if not rows:
         return {"submitters": 0, "total_submissions": 0, "ac_count": 0,
                 "correct_rate": 0.0, "last_fetched_at": None}
@@ -409,19 +416,25 @@ def get_exam_recent_submissions(assignment_id: int, limit: int = 5) -> list[dict
     """
     return execute_query(sql, (assignment_id, limit), fetch=True) or []
 
-def get_exam_first_ac_cdf(assignment_id: int) -> list[dict]:
+def get_exam_first_ac_cdf(assignment_id: int, ac_threshold: Optional[float] = None) -> list[dict]:
     """
     학생별 '최초 AC' 시각을 오름차순으로 반환. student_id는 집계 목적으로만
     조회되며 호출측에서 즉시 버리고 (timestamp, cumulative_count) 형태로 쓴다.
+    ac_threshold가 주어지면 score가 그 점수 이상인 제출도 AC로 간주한다.
     """
-    sql = """
+    ac_cond = "verdict = 'AC'"
+    params: tuple = (assignment_id,)
+    if ac_threshold is not None:
+        ac_cond = "(verdict = 'AC' OR score >= %s)"
+        params = (assignment_id, float(ac_threshold))
+    sql = f"""
     SELECT MIN(submitted_at) AS first_ac
     FROM submissions
-    WHERE assignment_id = %s AND verdict = 'AC'
+    WHERE assignment_id = %s AND {ac_cond}
     GROUP BY student_id
     ORDER BY first_ac ASC
     """
-    return execute_query(sql, (assignment_id,), fetch=True) or []
+    return execute_query(sql, params, fetch=True) or []
 
 # --- Admin Dashboard Support ---
 

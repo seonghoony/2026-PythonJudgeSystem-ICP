@@ -450,6 +450,14 @@ def _load_exam_config(lecture_id: int):
 
     exam = (conf.get("exam") or {}).get(lecture_id) or {}
     problem_ids = list(exam.get("problems") or [])
+    # 문항별 대시보드 전용 '정답' 점수 기준 (없으면 verdict='AC'만 정답).
+    raw_thresholds = exam.get("ac_thresholds") or {}
+    ac_thresholds = {}
+    for k, v in raw_thresholds.items():
+        try:
+            ac_thresholds[int(k)] = float(v)
+        except (TypeError, ValueError):
+            continue
     window_start = exam.get("window_start")
     window_end = exam.get("window_end")
     class_size = exam.get("class_size")
@@ -471,6 +479,7 @@ def _load_exam_config(lecture_id: int):
             "assignment_id": aid,
             "label": f"실기 {idx + 1}",
             "name": display_name,
+            "ac_threshold": ac_thresholds.get(int(aid)),
         })
 
     return {
@@ -517,17 +526,25 @@ async def api_exam_data(lecture_id: int, _: str = Depends(verify_lecture_access)
 
     for meta in cfg["problems"]:
         aid = meta["assignment_id"]
-        stats = db.get_exam_problem_stats(aid)
+        threshold = meta.get("ac_threshold")
+        stats = db.get_exam_problem_stats(aid, ac_threshold=threshold)
 
         recent_raw = db.get_exam_recent_submissions(aid, limit=5)
-        recent = [{
-            "anon_id": _mask_student_id(r["student_id"]),
-            "verdict": r.get("verdict"),
-            "submitted_at": str(r["submitted_at"]) if r.get("submitted_at") else None,
-        } for r in recent_raw]
+        recent = []
+        for r in recent_raw:
+            verdict = r.get("verdict")
+            # 표시 기준점수를 넘긴 제출은 최근 목록에서도 AC 배지로 보이게 통일.
+            if (threshold is not None and verdict not in (None, "AC")
+                    and r.get("score") is not None and float(r["score"]) >= threshold):
+                verdict = "AC"
+            recent.append({
+                "anon_id": _mask_student_id(r["student_id"]),
+                "verdict": verdict,
+                "submitted_at": str(r["submitted_at"]) if r.get("submitted_at") else None,
+            })
 
         # 서버에서 누적 카운트까지 계산해 ECharts 에 바로 바인딩 가능한 (ts, n) 쌍으로 내려줌.
-        cdf_rows = db.get_exam_first_ac_cdf(aid)
+        cdf_rows = db.get_exam_first_ac_cdf(aid, ac_threshold=threshold)
         cdf = []
         for i, row in enumerate(cdf_rows, start=1):
             ts = row.get("first_ac")

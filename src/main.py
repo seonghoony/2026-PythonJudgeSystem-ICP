@@ -457,10 +457,18 @@ def run_grade(assignment_id: str, dry_run: bool = False, force: bool = False, ur
 
                         # 채점 기준(꼭지)별 통과 여부를 (O)/(X)로 나열한다.
                         # 학생에게 보이는 실시간 평점이 어느 기준에서 깎였는지 투명하게 드러나도록 한다.
+                        # 같은 label을 공유하는 연속 테스트는 하나의 채점 기준으로 묶어 한 줄로 표시한다
+                        # (기준 내 일부만 통과해도 (X) — 통과 개수는 표시하지 않는다).
+                        _groups = []
                         for _res in result.results:
-                            _mark = "(O)" if _res.is_correct else "(X)"
                             _tcid = str(_res.test_case_id)
-                            _label = f"테스트 {_tcid}" if _tcid.isdigit() else _tcid
+                            _label = getattr(_res, "label", None) or (f"테스트 {_tcid}" if _tcid.isdigit() else _tcid)
+                            if _groups and _groups[-1][0] == _label:
+                                _groups[-1][1].append(_res)
+                            else:
+                                _groups.append([_label, [_res]])
+                        for _label, _rs in _groups:
+                            _mark = "(O)" if all(_r.is_correct for _r in _rs) else "(X)"
                             comment += f"\n{_mark} {_label}"
 
                         from src.utils.sanitizer import sanitize_traceback

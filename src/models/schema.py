@@ -37,6 +37,7 @@ class TestCaseResult(BaseModel):
     test_case_id: str
     is_correct: bool
     weight: float = 1.0   # 부분점수 가중치. 미지정 시 1.0 → (통과 수/전체 수)와 동일.
+    label: Optional[str] = None   # 학생 코멘트 (O)/(X)에 쓸 표시명. 미지정 시 test_case_id 기반.
     stdout: str = ""
     stderr: str = ""
     exit_code: int = 0
